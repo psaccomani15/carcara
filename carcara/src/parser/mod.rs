@@ -519,6 +519,25 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 assert_num_args(&args, 1)?;
                 SortError::assert_eq(&Sort::Int, sorts[0])?;
             }
+            Operator::FfAdd | Operator::FfMul => {
+                assert_num_args(&args, 2..)?;
+                if !matches!(sorts[0], Sort::Ff(_)) && !sorts[0].is_polymorphic() {
+                    return Err(ParserError::ExpectedFfSort(sorts[0].clone()));
+                }
+                SortError::assert_all_eq(&sorts)?;
+            }
+            Operator::FfNeg => {
+                assert_num_args(&args, 1)?;
+                if !matches!(sorts[0], Sort::Ff(_)) && !sorts[0].is_polymorphic() {
+                    return Err(ParserError::ExpectedFfSort(sorts[0].clone()));
+                }
+            }
+            Operator::FfIdeal => {
+                assert_num_args(&args, 1..)?;
+            }
+            Operator::FfVariety | Operator::SetIsEmpty => {
+                assert_num_args(&args, 1)?;
+            }
             Operator::RareList => SortError::assert_all_eq(&sorts)?,
         }
         Ok(self.pool.add(Term::Op(op, args)))
@@ -695,6 +714,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 | Token::Numeral(_)
                 | Token::Decimal(_)
                 | Token::Bitvector { .. }
+                | Token::FfVal { .. }
                 | Token::String(_)
                 | Token::ReservedWord(_) => {
                     self.next_token()?;
@@ -1023,6 +1043,10 @@ impl<'a, R: BufRead> Parser<'a, R> {
             if rule == "hole" && !self.config.parse_hole_args {
                 self.ignore_until_close_parens()?;
                 Vec::new()
+            } else if rule == "ff_pac" {
+                let raw = self.lexer.read_raw_until_close_parens()?;
+                self.current_token = self.lexer.next_token()?.0;
+                vec![self.pool.add(Term::new_string(raw))]
             } else {
                 self.parse_sequence(Self::parse_term, true)?
             }
@@ -1328,6 +1352,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
     pub fn parse_term(&mut self) -> CarcaraResult<Rc<Term>> {
         let term = match self.next_token()? {
             (Token::Bitvector { value, width }, _) => Term::new_bv(value, width),
+            (Token::FfVal { value, order }, _) => Term::new_ffval(value, order),
             (Token::Numeral(n), _) if self.interpret_ints_as_reals() => Term::new_real(n),
             (Token::Numeral(n), _) => Term::new_int(n),
             (Token::Decimal(r), _) => Term::new_real(r),
@@ -1357,6 +1382,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
     pub fn parse_constant(&mut self) -> CarcaraResult<Constant> {
         let constant = match self.next_token()? {
             (Token::Bitvector { value, width }, _) => Constant::BitVec(value, width),
+            (Token::FfVal { value, order }, _) => Constant::FfVal(value, order),
             (Token::Numeral(n), _) if self.interpret_ints_as_reals() => Constant::Real(n.into()),
             (Token::Numeral(n), _) => Constant::Integer(n),
             (Token::Decimal(r), _) => Constant::Real(r),
@@ -1523,6 +1549,26 @@ impl<'a, R: BufRead> Parser<'a, R> {
             );
             return Ok((ParamOperator::BvConst, constant_args));
         }
+        if let Some(value) = op_symbol.strip_prefix("ff") {
+            let parsed_value = value.parse::<Integer>().unwrap();
+            let args = self.parse_sequence(Self::parse_term, true)?;
+            let mut constant_args = Vec::new();
+            for arg in args {
+                if let Some(i) = arg.as_integer() {
+                    constant_args.push(self.pool.add(Term::Const(Constant::Integer(i))));
+                } else {
+                    return Err(Error::Parser(
+                        ParserError::ExpectedIntegerConstant(arg.clone()),
+                        self.current_position,
+                    ));
+                }
+            }
+            constant_args.insert(
+                0,
+                self.pool.add(Term::Const(Constant::Integer(parsed_value))),
+            );
+            return Ok((ParamOperator::FfConst, constant_args));
+        }
         let op = ParamOperator::from_str(op_symbol.as_str()).map_err(|_| {
             Error::Parser(
                 ParserError::InvalidIndexedOp(op_symbol),
@@ -1575,6 +1621,13 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 assert_indexed_op_args_value(&[op_args[0].clone()], 0..)?;
                 assert_indexed_op_args_value(&[op_args[1].clone()], 1..)?;
                 return Ok(self.pool.add(Term::Const(Constant::BitVec(value, width))));
+            }
+            ParamOperator::FfConst => {
+                assert_num_args(&op_args, 2)?;
+                assert_num_args(&args, 0)?;
+                let value = op_args[0].as_integer().unwrap();
+                let order = op_args[1].as_integer().unwrap();
+                return Ok(self.pool.add(Term::Const(Constant::FfVal(value, order))));
             }
             ParamOperator::BvExtract => {
                 /*
@@ -1902,6 +1955,16 @@ impl<'a, R: BufRead> Parser<'a, R> {
                     Ok(self
                         .pool
                         .add(Term::Sort(Sort::BitVec(width.to_usize().unwrap()))))
+                } else {
+                    Err(ParserError::ExpectedIntegerConstant(args[0].clone()))
+                }
+            }
+            "FiniteField" => {
+                if args.len() != 1 {
+                    return Err(ParserError::WrongNumberOfArgs(1.into(), args.len()));
+                }
+                if let Some(order) = args[0].as_integer() {
+                    Ok(self.pool.add(Term::Sort(Sort::Ff(order))))
                 } else {
                     Err(ParserError::ExpectedIntegerConstant(args[0].clone()))
                 }

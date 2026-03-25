@@ -81,6 +81,7 @@ impl PrimitivePool {
                 Constant::Real(_) => Sort::Real,
                 Constant::String(_) => Sort::String,
                 Constant::BitVec(_, w) => Sort::BitVec(*w),
+                Constant::FfVal(_, order) => Sort::Ff(order.clone()),
             },
             Term::Var(_, sort) => sort.as_sort().unwrap().clone(),
             Term::Op(op, args) => match op {
@@ -257,6 +258,20 @@ impl PrimitivePool {
                 | Operator::ReRange => Sort::RegLan,
                 Operator::Pow2 | Operator::Log2 => Sort::Int,
                 Operator::IsPow2 => Sort::Bool,
+                Operator::FfAdd | Operator::FfMul | Operator::FfNeg => {
+                    match self.compute_sort(&args[0]).as_sort().unwrap().clone() {
+                        Sort::Ff(order) => Sort::Ff(order),
+                        Sort::ParamSort(v, head) => {
+                            if let Some(Sort::Var(_)) = head.as_sort() {
+                                Sort::ParamSort(v, head)
+                            } else {
+                                unreachable!()
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                Operator::FfIdeal | Operator::FfVariety | Operator::SetIsEmpty => Sort::Bool,
                 Operator::RareList => Sort::RareList,
             },
             Term::App(f, args) => {
@@ -337,6 +352,9 @@ impl PrimitivePool {
 
                     ParamOperator::BvConst => unreachable!(
                         "bv const should be handled by the parser and transformed into a constant"
+                    ),
+                    ParamOperator::FfConst => unreachable!(
+                        "ff const should be handled by the parser and transformed into a constant"
                     ),
                     ParamOperator::IntToBv => {
                         let bvsize = op_args[0].as_integer().unwrap().to_usize().unwrap();

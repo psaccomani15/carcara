@@ -11,6 +11,7 @@ pub enum Value {
     Real(Rational),
     String(String),
     BitVec(Integer, usize),
+    FfVal(Integer, Integer),
 }
 
 impl Value {
@@ -21,6 +22,7 @@ impl Value {
             Constant::Real(r) => Value::Real(r),
             Constant::String(s) => Value::String(s),
             Constant::BitVec(val, width) => Value::BitVec(val, width),
+            Constant::FfVal(val, order) => Value::FfVal(val, order),
         }
     }
 
@@ -84,6 +86,13 @@ impl Value {
         Some((val, w))
     }
 
+    pub fn as_ff(&self) -> Option<(&Integer, Integer)>{
+        match self{
+            Value::FfVal(val, order) => Some((val, order.clone())),
+            _ => None,
+        }  
+    }
+
     /// Constructs a constant term that corresponds to this value.
     pub fn into_term(self) -> Term {
         match self {
@@ -93,6 +102,7 @@ impl Value {
             Value::Real(r) => Term::Const(Constant::Real(r)),
             Value::String(s) => Term::Const(Constant::String(s)),
             Value::BitVec(val, width) => Term::Const(Constant::BitVec(val, width)),
+            Value::FfVal(val, order) => Term::Const(Constant::FfVal(val, order)),
         }
     }
 }
@@ -198,6 +208,20 @@ macro_rules! bitvec_op {
             Some((acc $op arg).keep_bits(w as u32))
         })?;
         Value::new_bitvec(res, w)
+    }};
+}
+
+macro_rules! ff_op {
+    ($op:tt, $args:expr) => {{
+        let args = $args;
+        let Value::FfVal(first, order) = args[0].clone() else {
+            return None;
+        };
+        let res = args[1..].iter().try_fold(first, |acc, arg| {
+            let (arg, _) = arg.as_ff()?;
+            Some(Integer::from(acc $op arg) % &order)
+        })?;
+        Some(Value::FfVal(res, order))
     }};
 }
 
@@ -487,6 +511,16 @@ fn eval_op(op: Operator, args: &[Rc<Term>]) -> Option<Value> {
             Value::BitVec(result, width)
         }
 
+        // Finite fields
+        Operator::FfAdd => ff_op!(+, args)?,
+        Operator::FfMul => ff_op!(*, args)?,
+        Operator::FfNeg => {
+            let (val, order) = args[0].as_ff()?;
+            let result = Integer::from(-val) % &order;
+            Value::FfVal(result, order)
+        }
+        Operator::FfIdeal | Operator::FfVariety | Operator::SetIsEmpty => return None,
+
         // TODO: Rare
         Operator::RareList | Operator::Cl | Operator::Delete => return None,
     })
@@ -559,6 +593,12 @@ fn eval_param_op(op: ParamOperator, op_args: &[Rc<Term>], args: &[Rc<Term>]) -> 
             let (value, _) = args[0].as_bitvec()?;
             let bit = Integer::from(value.get_bit(i as u32) as usize);
             Value::Integer(bit)
+        }
+
+        ParamOperator::FfConst => {
+            let value = op_args[0].as_int()?;
+            let order = op_args[1].as_int()?;
+            Value::FfVal(value, order)
         }
 
         // TODO: Strings, Arrays

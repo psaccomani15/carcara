@@ -35,6 +35,9 @@ pub enum Token {
     /// A bitvector literal.
     Bitvector { value: Integer, width: usize },
 
+    /// A finite field literal, e.g. `#f0m17`.
+    FfVal { value: Integer, order: Integer },
+
     /// A string literal.
     String(String),
 
@@ -235,6 +238,32 @@ impl<R: BufRead> Lexer<R> {
         Ok(result)
     }
 
+    /// Reads raw characters until the matching closing parenthesis is reached, preserving
+    /// all content including `;` comments and non-SMT-LIB characters like `,`.
+    /// Assumes the opening `(` has already been consumed.
+    pub fn read_raw_until_close_parens(&mut self) -> io::Result<String> {
+        let mut result = String::new();
+        let mut depth: i32 = 1;
+        while depth > 0 {
+            match self.current_char {
+                Some('(') => {
+                    depth += 1;
+                    result.push('(');
+                }
+                Some(')') => {
+                    depth -= 1;
+                    if depth > 0 {
+                        result.push(')');
+                    }
+                }
+                Some(c) => result.push(c),
+                None => break,
+            }
+            self.next_char()?;
+        }
+        Ok(result)
+    }
+
     /// Reads and drops characters until a non-whitespace character is encountered.
     ///
     /// This is similar to calling `self.read_chars_while(char::is_whitespace)`, but this method
@@ -276,7 +305,19 @@ impl<R: BufRead> Lexer<R> {
             Some('"') => self.read_string(),
             Some('|') => self.read_quoted_symbol(),
             Some(':') => self.read_keyword(),
-            Some('#') => self.read_bitvector(),
+            Some('#') => {
+                self.next_char()?; // Consume `#`
+                match self.next_char()? {
+                    Some('b') => self.read_bitvector(2, 1),
+                    Some('x') => self.read_bitvector(16, 4),
+                    Some('f') => self.read_ff_literal(),
+                    None => Err(Error::Parser(ParserError::EmptyBitvector, self.position)),
+                    Some(other) => Err(Error::Parser(
+                        ParserError::UnexpectedChar(other),
+                        self.position,
+                    )),
+                }
+            }
             Some('-') => {
                 // If we encounter the '-' character, the token can either be a GMP-style numerical
                 // literal (e.g. '-5'), or a symbol that starts with '-' (e.g. the '-' operator
@@ -337,31 +378,44 @@ impl<R: BufRead> Lexer<R> {
         Ok(Token::Keyword(symbol))
     }
 
-    /// Reads a binary or hexadecimal bitvector literal, e.g. `#b0110` or `#x01Ab`.
-    ///
-    /// Returns an error if any character other than `b` or `x` is encountered after the `#`, or if
-    /// no digits are provided.
-    fn read_bitvector(&mut self) -> CarcaraResult<Token> {
-        self.next_char()?; // Consume `#`
-        let (base, bits_per_char) = match self.next_char()? {
-            Some('b') => (2, 1),
-            Some('x') => (16, 4),
-            None => return Err(Error::Parser(ParserError::EmptyBitvector, self.position)),
-            Some(other) => {
-                return Err(Error::Parser(
-                    ParserError::UnexpectedChar(other),
-                    self.position,
-                ))
-            }
-        };
+    /// Reads a bitvector literal after `#b` or `#x` has been consumed.
+    fn read_bitvector(&mut self, base: i32, bits_per_char: usize) -> CarcaraResult<Token> {
         let s = self.read_chars_while(|c| c.is_digit(base as u32))?;
         if s.is_empty() {
             return Err(Error::Parser(ParserError::EmptyBitvector, self.position));
         }
-
         let width = s.len() * bits_per_char;
         let value = Integer::from_str_radix(&s, base).unwrap();
         Ok(Token::Bitvector { value, width })
+    }
+
+    /// Reads a finite field literal of the form `#f<value>m<order>`.
+    /// Assumes `#f` has already been consumed.
+    fn read_ff_literal(&mut self) -> CarcaraResult<Token> {
+        let value_str = self.read_chars_while(|c| c.is_ascii_digit())?;
+        if value_str.is_empty() {
+            return Err(Error::Parser(
+                ParserError::UnexpectedChar('f'),
+                self.position,
+            ));
+        }
+        match self.next_char()? {
+            Some('m') => {}
+            Some(c) => {
+                return Err(Error::Parser(
+                    ParserError::UnexpectedChar(c),
+                    self.position,
+                ))
+            }
+            None => return Err(Error::Parser(ParserError::EofInFfLiteral, self.position)),
+        }
+        let order_str = self.read_chars_while(|c| c.is_ascii_digit())?;
+        if order_str.is_empty() {
+            return Err(Error::Parser(ParserError::EofInFfLiteral, self.position));
+        }
+        let value = Integer::from_str_radix(&value_str, 10).unwrap();
+        let order = Integer::from_str_radix(&order_str, 10).unwrap();
+        Ok(Token::FfVal { value, order })
     }
 
     /// Reads an integer or decimal numerical literal.

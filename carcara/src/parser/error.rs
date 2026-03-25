@@ -49,6 +49,10 @@ pub enum ParserError {
     #[error("bitvector literal is too large")]
     TooLargeBitvector,
 
+    /// The lexer encountered the end of the input while reading a finite field literal.
+    #[error("unexpected EOF in finite field literal")]
+    EofInFfLiteral,
+
     /// The parser encountered an unexpected token.
     #[error("unexpected token: '{0}'")]
     UnexpectedToken(Token),
@@ -64,6 +68,10 @@ pub enum ParserError {
     /// Expected `BvSort`
     #[error("expected bitvector sort, got '{0}'")]
     ExpectedBvSort(Sort),
+
+    /// Expected `FfSort`
+    #[error("expected finite field sort, got '{0}'")]
+    ExpectedFfSort(Sort),
 
     // Expected Constant::Integer, got other Term
     #[error("expected integer constant, got '{0}'")]

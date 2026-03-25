@@ -509,6 +509,7 @@ impl fmt::Display for Constant {
             }
             Constant::String(s) => write!(f, "\"{}\"", escape_string(s)),
             Constant::BitVec(val, width) => write!(f, "(_ bv{} {})", val, width), // TODO: comeback to this
+            Constant::FfVal(val, order) => write!(f, "(_ ff{} {})", val, order),
         }
     }
 }
@@ -559,6 +560,7 @@ impl fmt::Display for Sort {
             Sort::ParamSort(args, s) => write!(f, "(par {:?} {})", args, s),
             Sort::Array(x, y) => write_s_expr(f, "Array", &[x, y]),
             Sort::BitVec(w) => write!(f, "(_ BitVec {})", w),
+            Sort::Ff(order) => write!(f, "(_ FiniteField {})", order),
             Sort::RareList => write!(f, "rare-list"),
             Sort::Type => write!(f, "Type"),
         }
@@ -577,6 +579,7 @@ impl fmt::Display for Token {
             Token::Bitvector { value, width } => {
                 write!(f, "#b{v:0>w$b}", v = value, w = { *width })
             }
+            Token::FfVal { value, order } => write!(f, "#f{}m{}", value, order),
             Token::String(s) => write!(f, "\"{}\"", escape_string(s)),
             Token::ReservedWord(r) => write!(f, "{}", r),
             Token::Eof => write!(f, "EOF"),

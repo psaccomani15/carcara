@@ -92,6 +92,11 @@ pub enum Sort {
     /// A parametric sort, with a set of sort variables that can appear in the second argument.
     ParamSort(Vec<Rc<Term>>, Rc<Term>),
 
+    /// 'Ff' sort.
+    ///
+    /// The associated 'Integer' is the order of the field.
+    Ff(Integer),
+
     /// The sort of RARE lists.
     RareList,
 
@@ -118,6 +123,11 @@ pub enum Constant {
     ///
     /// The associated values are the bitvector's value and width respectively.
     BitVec(Integer, usize),
+
+    /// A finite field literal term.
+    ///
+    /// The associated values are the element value and the field order respectively.
+    FfVal(Integer, Integer),
 }
 
 /// A binder, either a quantifier (`forall` or `exists`), `choice`, or `lambda`.
@@ -377,6 +387,15 @@ pub enum Operator {
     IsPow2,
     // logarithm in base 2 of x
     Log2,
+    // FF operators
+    FfAdd,
+    FfMul,
+    FfNeg,
+
+    //FF Proof operators
+    FfIdeal,
+    FfVariety,
+    SetIsEmpty,
 
     // Misc.
     /// The `rare-list` operator, used to represent RARE lists.
@@ -499,6 +518,14 @@ impl Operator {
             | Operator::IsPow2
             | Operator::Log2
             | Operator::RareList => None,
+            // Finite Fields
+            Operator::FfAdd | Operator::FfMul => {
+                Some(NaryCase::LeftAssoc)
+            }
+            Operator::FfNeg
+            | Operator::FfIdeal
+            | Operator::FfVariety
+            | Operator::SetIsEmpty => None,
 
             // Clausal
             Operator::Cl | Operator::Delete => Some(NaryCase::LeftAssoc),
@@ -518,6 +545,7 @@ pub enum ParamOperator {
     RotateRight,
     Repeat,
     BvConst,
+    FfConst,
 
     IntToBv,
 
@@ -637,6 +665,12 @@ impl_str_conversion_traits!(Operator {
     IsPow2: "int.ispow2",
     Log2: "int.log2",
 
+    FfAdd: "ff.add",
+    FfMul: "ff.mul",
+    FfNeg: "ff.neg",
+    FfIdeal: "@ff.ideal",
+    FfVariety: "@ff.variety",
+    SetIsEmpty: "set.is_empty",
     RareList: "rare-list",
 
     Cl: "cl",
@@ -653,6 +687,7 @@ impl_str_conversion_traits!(ParamOperator {
     RotateRight: "rotate_right",
     Repeat: "repeat",
     BvConst: "bv",
+    FfConst: "ff",
 
     IntToBv: "int_to_bv",
 
@@ -759,6 +794,7 @@ impl Sort {
                 s_x_a.match_with(s_x_b, map) && s_y_a.match_with(s_y_b, map)
             }
             (Sort::BitVec(a), Sort::BitVec(b)) => a == b,
+            (Sort::Ff(a), Sort::Ff(b)) => a == b,
             _ => false,
         }
     }
@@ -791,6 +827,11 @@ impl Term {
     /// Constructs a new bv term.
     pub fn new_bv(value: impl Into<Integer>, width: usize) -> Self {
         Term::Const(Constant::BitVec(value.into(), width))
+    }
+
+    /// Constructs a new finite field value term.
+    pub fn new_ffval(value: impl Into<Integer>, order: impl Into<Integer>) -> Self {
+        Term::Const(Constant::FfVal(value.into(), order.into()))
     }
 
     /// Constructs a new variable term.
@@ -1115,6 +1156,7 @@ impl Constant {
             Constant::Real(_) => Sort::Real,
             Constant::String(_) => Sort::String,
             Constant::BitVec(_, width) => Sort::BitVec(*width),
+            Constant::FfVal(_, order) => Sort::Ff(order.clone()),
         }
     }
 
