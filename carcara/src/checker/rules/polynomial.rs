@@ -21,7 +21,7 @@ impl Monomial {
 }
 
 #[derive(Debug, Clone)]
-struct Polynomial(pub(crate) IndexMap<Monomial, Rational>, pub(crate) Rational);
+struct Polynomial(IndexMap<Monomial, Rational>, Rational);
 
 impl Polynomial {
     fn new() -> Self {
@@ -41,12 +41,12 @@ impl Polynomial {
     fn add_term(&mut self, term: &Rc<Term>, coeff: &Rational) {
         // We traverse the term without using a cache for the same reasons as `LinearComb`.
         match term.as_ref() {
-            Term::Op(Operator::Add | Operator::BvAdd, args) => {
+            Term::Op(Operator::Add | Operator::BvAdd | Operator::FfAdd, args) => {
                 for a in args {
                     self.add_term(a, coeff);
                 }
             }
-            Term::Op(Operator::Sub | Operator::BvNeg, args) if args.len() == 1 => {
+            Term::Op(Operator::Sub | Operator::BvNeg | Operator::FfNeg, args) if args.len() == 1 => {
                 self.add_term(&args[0], &coeff.as_neg());
             }
             Term::Op(Operator::Sub | Operator::BvSub, args) => {
@@ -55,7 +55,7 @@ impl Polynomial {
                     self.add_term(a, &coeff.as_neg());
                 }
             }
-            Term::Op(Operator::Mult | Operator::BvMul, args) => {
+            Term::Op(Operator::Mult | Operator::BvMul | Operator::FfMul, args) => {
                 let result = args.iter().map(Self::from_term).reduce(Self::mul).unwrap();
                 for (var, inner_coeff) in result.0 {
                     self.insert(var, inner_coeff * coeff);
@@ -85,6 +85,9 @@ impl Polynomial {
                 } else if let Some((value, _)) = term.as_bitvector() {
                     // The width is irrelevant for the normalization, overflow will be dealt with
                     // later, using the `modulo` method
+                    self.1 += Rational::from(value) * coeff;
+                } else if let Some((value, _)) = term.as_ffval() {
+                    // The order is irrelevant here, modulo is applied later
                     self.1 += Rational::from(value) * coeff;
                 } else {
                     self.insert(Monomial(vec![term.clone()]), coeff.clone());
@@ -156,6 +159,7 @@ impl Polynomial {
             }
             *coeff = coeff.numer().clone().modulo(n).into();
         }
+        self.0.retain(|_, coeff| !coeff.is_zero());
         if self.1.is_integer() {
             self.1 = self.1.numer().clone().modulo(n).into();
             Some(self)
@@ -170,11 +174,18 @@ pub fn poly_simp(RuleArgs { conclusion, pool, .. }: RuleArgs) -> RuleResult {
     let (t, s) = match_term_err!((= t s) = &conclusion[0])?;
     let (mut t_norm, mut s_norm) = (Polynomial::from_term(t), Polynomial::from_term(s));
 
-    // If the sort is a bitvector sort, we must take the modulo
-    if let Sort::BitVec(width) = pool.sort(t).as_sort().unwrap() {
-        let max = Integer::from(1) << width;
-        t_norm = t_norm.modulo(&max).unwrap();
-        s_norm = s_norm.modulo(&max).unwrap();
+    // For bitvector and finite field sorts, we must take the modulo
+    match pool.sort(t).as_sort().unwrap() {
+        Sort::BitVec(width) => {
+            let max = Integer::from(1) << width;
+            t_norm = t_norm.modulo(&max).unwrap();
+            s_norm = s_norm.modulo(&max).unwrap();
+        }
+        Sort::Ff(order) => {
+            t_norm = t_norm.modulo(order).unwrap();
+            s_norm = s_norm.modulo(order).unwrap();
+        }
+        _ => {}
     }
 
     if !t_norm.sub(s_norm).is_zero() {
@@ -202,6 +213,28 @@ pub fn poly_simp_rel(RuleArgs { conclusion, premises, pool, .. }: RuleArgs) -> R
         let one = pool.add(Term::new_bv(Integer::from(1), *width));
         assert_is_expected(c1, one.clone())?;
         assert_is_expected(c2, one)?;
+
+        let ((l1, l2), (r1, r2)) = match_term_err!((= (= x1 x2) (= y1 y2)) = &conclusion[0])?;
+
+        assert_eq(l1, x1)?;
+        assert_eq(l2, x2)?;
+        assert_eq(r1, y1)?;
+        assert_eq(r2, y2)?;
+        return Ok(());
+    }
+
+    let finite_field_case = match_term!(
+        (= (ffmul c1 (ffadd x1 (ffneg x2))) (ffmul c2 (ffadd y1 (ffneg y2))))
+        = prem);
+    if let Some(((c1, (x1, x2)), (c2, (y1, y2)))) = finite_field_case {
+        let sort = pool.sort(c1);
+        if !matches!(sort.as_sort().unwrap(), Sort::Ff(_)) {
+            return Err(PolynomialError::ExpectedFfSort(sort.as_sort().unwrap().clone()).into());
+        }
+        for c in [c1, c2] {
+            let (val, _) = c.as_ffval().unwrap();
+            rassert!(val != 0, PolynomialError::CoeffIsZero(Rational::from(val)));
+        }
 
         let ((l1, l2), (r1, r2)) = match_term_err!((= (= x1 x2) (= y1 y2)) = &conclusion[0])?;
 
@@ -241,5 +274,18 @@ pub fn poly_simp_rel(RuleArgs { conclusion, premises, pool, .. }: RuleArgs) -> R
             Ok(())
         }
         ((op1, _), (op2, _)) => Err(PolynomialError::InvalidOperators(op1, op2).into()),
+    }
+}
+
+/// Checks whether two FF terms normalize to the same polynomial modulo `order`.
+pub(crate) fn ff_poly_norm_eq(t: &Rc<Term>, s: &Rc<Term>, order: &Integer) -> RuleResult {
+    let (t_norm, s_norm) = (
+        Polynomial::from_term(t).modulo(order).unwrap(),
+        Polynomial::from_term(s).modulo(order).unwrap(),
+    );
+    if !t_norm.sub(s_norm).is_zero() {
+        Err(PolynomialError::PolynomialsNotEqual(t.clone(), s.clone()).into())
+    } else {
+        Ok(())
     }
 }

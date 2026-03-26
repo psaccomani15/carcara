@@ -202,9 +202,10 @@ pub fn get_rule_shared(rule_name: &str, elaborated: bool) -> Option<crate::check
         "la_disequality" => linear_arithmetic::la_disequality,
         "la_totality" => linear_arithmetic::la_totality,
         "la_tautology" => linear_arithmetic::la_tautology,
-        // We allow the usage of legacy rules `bv_poly_simp(_eq)`
-        "poly_simp" | "bv_poly_simp" => polynomial::poly_simp,
-        "poly_simp_rel" | "bv_poly_simp_eq" => polynomial::poly_simp_rel,
+        // We allow the usage of legacy rules `bv_poly_simp(_eq)` and `ff_poly_simp(_eq)`
+        "poly_simp" | "bv_poly_simp" | "ff_poly_simp" => polynomial::poly_simp,
+        "poly_simp_rel" | "bv_poly_simp_eq" | "ff_poly_simp_eq" => polynomial::poly_simp_rel,
+        "ff_poly_conversion" => finite_fields::ff_poly_conversion,
         "forall_inst" => quantifier::forall_inst,
         "qnt_join" => quantifier::qnt_join,
         "qnt_rm_unused" => quantifier::qnt_rm_unused,

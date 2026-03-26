@@ -359,6 +359,9 @@ pub enum PolynomialError {
     #[error("expected bitvector sort, got '{0}'")]
     ExpectedBvSort(Sort),
 
+    #[error("expected finite field sort, got '{0}'")]
+    ExpectedFfSort(Sort),
+
     #[error("coefficient can't be zero: '{0}'")]
     CoeffIsZero(Rational),
 

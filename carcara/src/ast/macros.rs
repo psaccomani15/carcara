@@ -220,6 +220,10 @@ macro_rules! match_term {
     (@GET_VARIANT rotate_right) => { $crate::ast::ParamOperator::RotateRight };
     (@GET_VARIANT repeat) => { $crate::ast::ParamOperator::Repeat };
 
+    (@GET_VARIANT ffadd)     => { $crate::ast::Operator::FfAdd };
+    (@GET_VARIANT ffmul)     => { $crate::ast::Operator::FfMul };
+    (@GET_VARIANT ffneg)     => { $crate::ast::Operator::FfNeg };
+
     (@GET_VARIANT strconcat) => { $crate::ast::Operator::StrConcat };
     (@GET_VARIANT strsubstr) => { $crate::ast::Operator::Substring };
     (@GET_VARIANT strlen)    => { $crate::ast::Operator::StrLen };

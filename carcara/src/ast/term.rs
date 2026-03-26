@@ -925,6 +925,15 @@ impl Term {
         }
     }
 
+    /// Tries to extract a finite field value from a term. Returns `Some` if the
+    /// term is a finite field constant.
+    pub fn as_ffval(&self) -> Option<(Integer, Integer)> {
+        match self {
+            Term::Const(Constant::FfVal(v, order)) => Some((v.clone(), order.clone())),
+            _ => None,
+        }
+    }
+
     /// Tries to extract a `Rational` from a term, allowing fractions. This method will return
     /// `Some` if the term is:
     ///

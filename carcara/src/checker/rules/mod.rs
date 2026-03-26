@@ -162,6 +162,7 @@ pub(super) mod congruence;
 pub(super) mod cutting_planes;
 pub(super) mod drup;
 pub(super) mod extras;
+pub(super) mod finite_fields;
 pub(super) mod linear_arithmetic;
 pub(super) mod pb_blasting;
 pub(super) mod polynomial;
