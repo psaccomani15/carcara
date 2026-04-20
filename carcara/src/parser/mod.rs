@@ -1044,7 +1044,14 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 self.ignore_until_close_parens()?;
                 Vec::new()
             } else if rule == "ff_pac" {
-                let raw = self.lexer.read_raw_until_close_parens()?;
+                // After expect_token(OpenParen), current_token holds the first token
+                // inside the args (e.g. "m"). We need to include it in the raw string.
+                let first = match &self.current_token {
+                    Token::Symbol(s) => s.clone(),
+                    _ => String::new(),
+                };
+                let rest = self.lexer.read_raw_until_close_parens()?;
+                let raw = format!("{}{}", first, rest);
                 self.current_token = self.lexer.next_token()?.0;
                 vec![self.pool.add(Term::new_string(raw))]
             } else {

@@ -110,6 +110,24 @@ pub fn check_step_core<CR: CollectResults + Send + Default>(
         return Err(CheckerError::Subproof(SubproofError::DischargeInWrongRule));
     }
 
+    // ff_pac is handled specially: it calls an external binary rather than a Rule function
+    if step.rule == "ff_pac" {
+        use crate::checker::{error::CheckerError, rules::finite_fields};
+        return match &context.config.ff_pac_solver {
+            Some(solver) => {
+                let result =
+                    finite_fields::check_ff_pac(rule_args.args, solver.as_ref());
+                if let Some(s) = stats {
+                    let elapsed = time.elapsed();
+                    s.results
+                        .add_step_measurement(s.file_name, &step.id, &step.rule, elapsed);
+                }
+                result
+            }
+            None => Err(CheckerError::FfPacNotConfigured),
+        };
+    }
+
     let rule = match get_rule_shared(&step.rule, context.config.elaborated) {
         Some(r) => r,
         None if context.config.ignore_unknown_rules => {
@@ -206,6 +224,7 @@ pub fn get_rule_shared(rule_name: &str, elaborated: bool) -> Option<crate::check
         "poly_simp" | "bv_poly_simp" | "ff_poly_simp" => polynomial::poly_simp,
         "poly_simp_rel" | "bv_poly_simp_eq" | "ff_poly_simp_eq" => polynomial::poly_simp_rel,
         "ff_poly_conversion" => finite_fields::ff_poly_conversion,
+        "ff_diseq" => finite_fields::ff_diseq,
         "forall_inst" => quantifier::forall_inst,
         "qnt_join" => quantifier::qnt_join,
         "qnt_rm_unused" => quantifier::qnt_rm_unused,

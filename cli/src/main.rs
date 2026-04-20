@@ -188,6 +188,10 @@ struct CheckingOptions {
     /// - the pivots for `resolution` steps must be given as arguments
     #[clap(arg_enum, long, default_value = "normal", verbatim_doc_comment)]
     check_granularity: CheckGranularity,
+
+    /// Path to the `ffpacheck` binary for verifying `ff_pac` proof steps.
+    #[clap(long)]
+    ff_pac_solver: Option<String>,
 }
 
 impl From<CheckingOptions> for checker::Config {
@@ -196,6 +200,7 @@ impl From<CheckingOptions> for checker::Config {
             elaborated: val.check_granularity == CheckGranularity::Elaborated,
             ignore_unknown_rules: val.ignore_unknown_rules || val.skip_unknown_rules,
             allowed_rules: val.allowed_rules.unwrap_or_default().into_iter().collect(),
+            ff_pac_solver: val.ff_pac_solver.map(Into::into),
         }
     }
 }

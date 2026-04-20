@@ -278,7 +278,7 @@ pub fn poly_simp_rel(RuleArgs { conclusion, premises, pool, .. }: RuleArgs) -> R
 }
 
 /// Checks whether two FF terms normalize to the same polynomial modulo `order`.
-pub(crate) fn ff_poly_norm_eq(t: &Rc<Term>, s: &Rc<Term>, order: &Integer) -> RuleResult {
+fn ff_poly_norm_eq(t: &Rc<Term>, s: &Rc<Term>, order: &Integer) -> RuleResult {
     let (t_norm, s_norm) = (
         Polynomial::from_term(t).modulo(order).unwrap(),
         Polynomial::from_term(s).modulo(order).unwrap(),

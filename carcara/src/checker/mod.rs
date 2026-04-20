@@ -62,6 +62,10 @@ pub struct Config {
 
     /// A set of rule names that the checker will allow, considering them holes in the proof.
     pub allowed_rules: HashSet<String>,
+
+    /// Path to the `ffpacheck` binary for verifying `ff_pac` proof steps. If `None`, `ff_pac`
+    /// steps are treated as unknown rules.
+    pub ff_pac_solver: Option<Box<str>>,
 }
 
 impl Config {
@@ -76,6 +80,11 @@ impl Config {
 
     pub fn ignore_unknown_rules(mut self, value: bool) -> Self {
         self.ignore_unknown_rules = value;
+        self
+    }
+
+    pub fn ff_pac_solver(mut self, path: Option<String>) -> Self {
+        self.ff_pac_solver = path.map(Into::into);
         self
     }
 }

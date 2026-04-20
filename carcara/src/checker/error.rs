@@ -233,6 +233,15 @@ pub enum CheckerError {
 
     #[error("unknown rule")]
     UnknownRule,
+
+    #[error("failed to spawn ff_pac solver: {0}")]
+    FfPacSpawnError(std::io::Error),
+
+    #[error("ff_pac solver rejected the proof (exit code: {0:?})")]
+    FfPacFailed(Option<i32>),
+
+    #[error("ff_pac solver not configured (use --ff-pac-solver)")]
+    FfPacNotConfigured,
 }
 
 /// Errors in which we expected two things to be equal but they weren't.
