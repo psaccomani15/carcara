@@ -1610,6 +1610,37 @@ impl<'a, R: BufRead> Parser<'a, R> {
         Ok((op, sort))
     }
 
+    /// Handles `(as ffV F)` by parsing the symbol, the sort, and building the
+    /// finite field constant directly. Returns `Ok(None)` if the current token
+    /// is not a `ff<V>` symbol, leaving the parser state untouched so the
+    /// caller can fall through to `parse_qualified_operator`.
+    fn parse_qualified_ff_const(&mut self) -> CarcaraResult<Option<Rc<Term>>> {
+        let Token::Symbol(s) = &self.current_token else {
+            return Ok(None);
+        };
+        let Some(value_str) = s.strip_prefix("ff") else {
+            return Ok(None);
+        };
+        let Ok(value) = value_str.parse::<Integer>() else {
+            return Ok(None);
+        };
+        self.next_token()?;
+        let sort = self.parse_sort(false)?;
+        self.expect_token(Token::CloseParen)?;
+        let order = match sort.as_sort().unwrap() {
+            Sort::Ff(order) => order.clone(),
+            other => {
+                return Err(Error::Parser(
+                    ParserError::ExpectedFfSort(other.clone()),
+                    self.current_position,
+                ))
+            }
+        };
+        Ok(Some(
+            self.pool.add(Term::Const(Constant::FfVal(value, order))),
+        ))
+    }
+
     /// Constructs, check operation arguments and sort checks an indexed operation term.
     fn make_indexed_op(
         &mut self,
@@ -1765,6 +1796,9 @@ impl<'a, R: BufRead> Parser<'a, R> {
                             .map_err(|err| Error::Parser(err, head_pos))
                     }
                     Reserved::As => {
+                        if let Some(term) = self.parse_qualified_ff_const()? {
+                            return Ok(term);
+                        }
                         let (op, sort) = self.parse_qualified_operator()?;
                         self.make_qualified_op(op, sort, Vec::new())
                             .map_err(|err| Error::Parser(err, head_pos))
@@ -1861,6 +1895,9 @@ impl<'a, R: BufRead> Parser<'a, R> {
                     }
                     Token::ReservedWord(Reserved::As) => {
                         self.next_token()?;
+                        if let Some(term) = self.parse_qualified_ff_const()? {
+                            return Ok(term);
+                        }
                         let (op, op_sort) = self.parse_qualified_operator()?;
                         let args = self.parse_sequence(Self::parse_term, true)?;
                         self.make_qualified_op(op, op_sort, args)
