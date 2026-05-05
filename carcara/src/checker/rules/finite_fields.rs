@@ -3,7 +3,7 @@ use super::{
     RuleArgs, RuleResult,
 };
 use crate::{
-    ast::{Operator, Rc, Sort, Term},
+    ast::{Binder, Operator, Rc, Sort, Term},
     checker::error::{CheckerError, PolynomialError},
 };
 use rug::Integer;
@@ -87,6 +87,9 @@ pub fn ff_poly_conversion(RuleArgs { conclusion, premises, .. }: RuleArgs) -> Ru
 /// Given `:args (l r sk)`, the conclusion clause must be
 /// `(= (not (= l r)) (= (ff.add (ff.mul (ff.add l (ff.neg r)) sk) #f(p-1)m<p>) #f0m<p>))`,
 /// where `p` is the order of the finite field `l` lives in.
+///
+/// Additionally, `sk` must be a Skolem witnessing that `(l - r)` is invertible:
+/// `(choice ((d (_ FiniteField p))) (= (ff.mul d (ff.add l (ff.neg r))) #f1m<p>))`.
 pub fn ff_diseq(RuleArgs { conclusion, args, pool, .. }: RuleArgs) -> RuleResult {
     assert_clause_len(conclusion, 1)?;
     assert_num_args(args, 3)?;
@@ -102,6 +105,29 @@ pub fn ff_diseq(RuleArgs { conclusion, args, pool, .. }: RuleArgs) -> RuleResult
 
     let neg_r = pool.add(Term::Op(Operator::FfNeg, vec![r.clone()]));
     let sub = pool.add(Term::Op(Operator::FfAdd, vec![l.clone(), neg_r]));
+
+    // Certify that `sk` is the intended Skolem: a choice term binding a single
+    // finite-field variable `d` of the same order, with body
+    // `(= (ff.mul d (l - r)) #f1m<p>)`.
+    let sk_form = "(choice ((d Ff)) (= (ff.mul d (ff.add l (ff.neg r))) #f1))";
+    let (bindings, body) = match sk.as_ref() {
+        Term::Binder(Binder::Choice, bindings, body) => (bindings, body),
+        _ => return Err(CheckerError::TermOfWrongForm(sk_form, sk.clone())),
+    };
+    if bindings.len() != 1 {
+        return Err(CheckerError::TermOfWrongForm(sk_form, sk.clone()));
+    }
+    let (bv_name, bv_sort) = &bindings[0];
+    match bv_sort.as_sort() {
+        Some(Sort::Ff(o)) if *o == order => {}
+        _ => return Err(CheckerError::TermOfWrongForm(sk_form, sk.clone())),
+    }
+    let bv_var = pool.add(Term::new_var(bv_name.clone(), bv_sort.clone()));
+    let one = pool.add(Term::new_ffval(1, order.clone()));
+    let inv_prod = pool.add(Term::Op(Operator::FfMul, vec![bv_var, sub.clone()]));
+    let expected_body = pool.add(Term::Op(Operator::Equals, vec![inv_prod, one]));
+    assert_eq(body, &expected_body)?;
+
     let prod = pool.add(Term::Op(Operator::FfMul, vec![sub, sk.clone()]));
     let minus_one =
         pool.add(Term::new_ffval(Integer::from(&order - 1u32), order.clone()));
