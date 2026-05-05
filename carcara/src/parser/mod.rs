@@ -240,6 +240,15 @@ impl<'a, R: BufRead> Parser<'a, R> {
         self.is_real_only_logic && self.problem.is_some()
     }
 
+    fn is_bv_sort(sort: &Sort) -> bool {
+        match sort {
+            Sort::BitVec(_) => true,
+            Sort::ParamSort(_, head) => matches!(head.as_sort(), Some(Sort::Var(_))),
+            Sort::RareList(inner) => inner.as_sort().is_some_and(Self::is_bv_sort),
+            _ => false,
+        }
+    }
+
     /// Constructs and sort checks an operation term.
     fn make_op(&mut self, op: Operator, args: Vec<Rc<Term>>) -> Result<Rc<Term>, ParserError> {
         let sorts: Vec<_> = args.iter().map(|t| self.pool.sort(t)).collect();
@@ -271,6 +280,14 @@ impl<'a, R: BufRead> Parser<'a, R> {
             Operator::Ite => {
                 assert_num_args(&args, 3)?;
                 SortError::assert_eq(&Sort::Bool, sorts[0])?;
+                SortError::assert_eq(sorts[1], sorts[2])?;
+            }
+            Operator::BvIte => {
+                assert_num_args(&args, 3)?;
+                SortError::assert_eq(&Sort::BitVec(1), sorts[0])?;
+                if !Self::is_bv_sort(sorts[1]) {
+                    return Err(ParserError::ExpectedBvSort(sorts[1].clone()));
+                }
                 SortError::assert_eq(sorts[1], sorts[2])?;
             }
             Operator::Add | Operator::Sub | Operator::Mult => {
@@ -438,14 +455,14 @@ impl<'a, R: BufRead> Parser<'a, R> {
             Operator::BvNot | Operator::BvNeg => {
                 assert_num_args(&args, 1)?;
                 for s in sorts {
-                    if !matches!(s, Sort::BitVec(_)) && !s.is_polymorphic() {
+                    if !Self::is_bv_sort(s) {
                         return Err(ParserError::ExpectedBvSort(s.clone()));
                     }
                 }
             }
             Operator::BvSize | Operator::UBvToInt | Operator::SBvToInt => {
                 assert_num_args(&args, 1)?;
-                if !matches!(sorts[0], Sort::BitVec(_)) && !sorts[0].is_polymorphic() {
+                if !Self::is_bv_sort(sorts[0]) {
                     return Err(ParserError::ExpectedBvSort(sorts[0].clone()));
                 }
             }
@@ -467,7 +484,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
             Operator::BvConcat => {
                 assert_num_args(&args, 2..)?;
                 for s in sorts {
-                    if !matches!(s, Sort::BitVec(_)) && !s.is_polymorphic() {
+                    if !Self::is_bv_sort(s) {
                         return Err(ParserError::ExpectedBvSort(s.clone()));
                     }
                 }
@@ -483,7 +500,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
             | Operator::BvOr
             | Operator::BvXor => {
                 assert_num_args(&args, 2..)?;
-                if !matches!(sorts[0], Sort::BitVec(_)) && !sorts[0].is_polymorphic() {
+                if !Self::is_bv_sort(sorts[0]) {
                     return Err(ParserError::ExpectedBvSort(sorts[0].clone()));
                 }
                 SortError::assert_all_eq(&sorts)?;
@@ -510,7 +527,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
             | Operator::BvSGt
             | Operator::BvSGe => {
                 assert_num_args(&args, 2)?;
-                if !matches!(sorts[0], Sort::BitVec(_)) && !sorts[0].is_polymorphic() {
+                if !Self::is_bv_sort(sorts[0]) {
                     return Err(ParserError::ExpectedBvSort(sorts[0].clone()));
                 }
                 SortError::assert_all_eq(&sorts)?;
@@ -538,7 +555,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
             Operator::FfVariety | Operator::SetIsEmpty => {
                 assert_num_args(&args, 1)?;
             }
-            Operator::RareList => SortError::assert_all_eq(&sorts)?,
+            Operator::RareList => (),
         }
         Ok(self.pool.add(Term::Op(op, args)))
     }
@@ -1374,11 +1391,32 @@ impl<'a, R: BufRead> Parser<'a, R> {
 
                     self.make_op(op, args)
                         .map_err(|err| Error::Parser(err, pos))
+                } else if let Ok(op) = ParamOperator::from_str(&s) {
+                    if op != ParamOperator::BvConst {
+                        // Parametric operators can be applied in a flat
+                        // way. The last argument will be the true
+                        // argument, and the previous ones the operator
+                        // arguments
+                        let args = self.parse_sequence(Self::parse_term, true)?;
+                        if let Some((last, op_args)) = args.split_last() {
+                            self.make_indexed_op(op, op_args.to_vec(), vec![last.clone()])
+                                .map_err(|err| Error::Parser(err, pos))
+                        } else {
+                            return Err(Error::Parser(
+                                ParserError::InvalidIndexedOp(op.to_string()),
+                                pos,
+                            ));
+                        }
+                    } else {
+                        self.make_var(s).map_err(|err| Error::Parser(err, pos))
+                    }
                 } else {
                     self.make_var(s).map_err(|err| Error::Parser(err, pos))
                 };
             }
-            (Token::OpenParen, _) => return self.parse_application(),
+            (Token::OpenParen, _) => {
+                return self.parse_application();
+            }
             (other, pos) => {
                 return Err(Error::Parser(ParserError::UnexpectedToken(other), pos));
             }
@@ -1678,7 +1716,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
                  */
                 assert_num_args(&op_args, 2)?;
                 assert_num_args(&args, 1)?;
-                if !matches!(sorts[0], Sort::BitVec(_)) {
+                if !Self::is_bv_sort(sorts[0]) {
                     return Err(ParserError::ExpectedBvSort(sorts[0].clone()));
                 }
                 for arg in &op_args {
@@ -1723,7 +1761,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 } else {
                     return Err(ParserError::ExpectedIntegerConstant(op_args[0].clone()));
                 }
-                if !matches!(sorts[0], Sort::BitVec(_)) {
+                if !Self::is_bv_sort(sorts[0]) {
                     return Err(ParserError::ExpectedBvSort(sorts[0].clone()));
                 }
                 assert_indexed_op_args_value(&op_args, 0..)?;
@@ -1833,6 +1871,24 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 self.make_op(operator, args)
                     .map_err(|err| Error::Parser(err, head_pos))
             }
+            Token::Symbol(s) if ParamOperator::from_str(s).is_ok() => {
+                // Parametric operators can be applied in a flat
+                // way. The last argument will be the true
+                // argument, and the previous ones the operator
+                // argumentsq
+                let op = ParamOperator::from_str(s).unwrap();
+                self.next_token()?;
+                let args = self.parse_sequence(Self::parse_term, true)?;
+                if let Some((last, op_args)) = args.split_last() {
+                    self.make_indexed_op(op, op_args.to_vec(), vec![last.clone()])
+                        .map_err(|err| Error::Parser(err, head_pos))
+                } else {
+                    return Err(Error::Parser(
+                        ParserError::InvalidIndexedOp(op.to_string()),
+                        head_pos,
+                    ));
+                }
+            }
             Token::Symbol(s) if s == "eo" => {
                 // "Let" constructions unfold
                 self.expect_token(Token::Symbol("eo".to_owned()))?;
@@ -1940,6 +1996,13 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 [x, y] => Ok(Sort::Array(x.clone(), y.clone())),
                 _ => Err(ParserError::WrongNumberOfArgs(2.into(), args.len())),
             },
+            "rare-list" | "RareList" => match args.as_slice() {
+                [elem] => Ok(Sort::RareList(elem.clone())),
+                [] => Ok(Sort::RareList(
+                    self.pool.add(Term::Sort(Sort::Var("T".to_owned()))),
+                )),
+                _ => Err(ParserError::WrongNumberOfArgs(1.into(), args.len())),
+            },
             other
                 if polymorphic
                     && other.starts_with('@')
@@ -2032,6 +2095,13 @@ impl<'a, R: BufRead> Parser<'a, R> {
             }
             Token::OpenParen if polymorphic => {
                 let name = self.expect_symbol()?;
+                if matches!(name.as_str(), "rare-list" | "RareList") {
+                    let args = self
+                        .parse_sequence(|parser| Parser::parse_sort(parser, polymorphic), true)?;
+                    return self
+                        .make_sort(name, args, polymorphic)
+                        .map_err(|e| Error::Parser(e, pos));
+                }
                 let args = self.parse_sequence(Self::parse_term, true)?;
                 let args = args
                     .into_iter()

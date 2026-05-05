@@ -101,7 +101,7 @@ pub fn check_step_core<CR: CollectResults + Send + Default>(
     let time = Instant::now();
 
     if context.config.allowed_rules.contains(&step.rule) {
-        *context.is_holey = true;
+        log::warn!("Step {} uses admitted rule {}", step.id, step.rule);
         return Ok(());
     }
 
@@ -235,6 +235,7 @@ pub fn get_rule_shared(rule_name: &str, elaborated: bool) -> Option<crate::check
         "trans" => transitivity::trans,
         "cong" => congruence::cong,
         "ho_cong" => congruence::ho_cong,
+        "and_intro" => extras::and_intro,
         "and" => clausification::and,
         "tautology" => resolution::tautology,
         "not_or" => clausification::not_or,
@@ -256,6 +257,9 @@ pub fn get_rule_shared(rule_name: &str, elaborated: bool) -> Option<crate::check
         "not_ite1" => tautology::not_ite1,
         "not_ite2" => tautology::not_ite2,
         "ite_intro" => tautology::ite_intro,
+        "to_int_intro" => tautology::to_int_intro,
+        "log2_intro" => tautology::log2_intro,
+        "div_intro" => tautology::div_intro,
         "contraction" => resolution::contraction,
         "connective_def" => tautology::connective_def,
         "ite_simplify" => simplification::ite_simplify,
@@ -277,12 +281,14 @@ pub fn get_rule_shared(rule_name: &str, elaborated: bool) -> Option<crate::check
         "comp_simplify" => simplification::comp_simplify,
         "nary_elim" => clausification::nary_elim,
         "ac_simp" => simplification::ac_simp,
+        "aci_simp" => simplification::aci_simp,
         "bfun_elim" => clausification::bfun_elim,
         "bind" => subproof::bind,
         "qnt_cnf" => quantifier::qnt_cnf,
         "miniscope_distribute" => quantifier::miniscope_distribute,
         "miniscope_split" => quantifier::miniscope_split,
         "miniscope_ite" => quantifier::miniscope_ite,
+        "beta_equiv" => quantifier::beta_equiv,
         "subproof" => subproof::subproof,
         "let" => subproof::r#let,
         "onepoint" => subproof::onepoint,
@@ -297,8 +303,16 @@ pub fn get_rule_shared(rule_name: &str, elaborated: bool) -> Option<crate::check
         "bind_let" => extras::bind_let,
         "la_mult_pos" => extras::la_mult_pos,
         "la_mult_neg" => extras::la_mult_neg,
+        "la_mult_sign" => extras::la_mult_sign,
+        "la_mult_abs_comparison" => extras::la_mult_abs_comparison,
         "mod_simplify" => extras::mod_simplify,
         "evaluate" => extras::evaluate,
+
+        // array rules
+        "arrays_idx" => arrays::idx,
+        "arrays_row" => arrays::row,
+        "arrays_row_contra" => arrays::row_contra,
+        "arrays_ext" => arrays::ext,
 
         "bitblast_const" => bitvectors::value,
         "bitblast_var" => bitvectors::var,

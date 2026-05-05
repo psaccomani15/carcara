@@ -113,6 +113,17 @@ where
     Ok(())
 }
 
+fn assert_all_eq<T>(items: &[&T]) -> RuleResult
+where
+    T: Eq + Clone + TypeName,
+    EqualityError<T>: Into<CheckerError>,
+{
+    for i in 1..items.len() {
+        assert_eq(items[i - 1], items[i])?;
+    }
+    Ok(())
+}
+
 fn assert_is_expected<T>(got: &T, expected: T) -> RuleResult
 where
     T: Eq + Clone + TypeName,
@@ -156,6 +167,7 @@ fn assert_is_bool_constant(got: &Rc<Term>, expected: bool) -> RuleResult {
     Ok(())
 }
 
+pub(super) mod arrays;
 pub(super) mod bitvectors;
 pub(super) mod clausification;
 pub(super) mod congruence;

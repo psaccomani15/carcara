@@ -104,6 +104,39 @@ macro_rules! match_term {
             None
         }
     };
+    ((lambda ... $args:tt) = $var:expr) => {
+        if let $crate::ast::Term::Binder($crate::ast::Binder::Lambda, bindings, inner) =
+            &$var as &$crate::ast::Term
+        {
+            match_term!($args = inner).and_then(|inner| Some((bindings, inner)))
+        } else {
+            None
+        }
+    };
+    ((@ $func:tt ...) = $var:expr) => {{
+        if let $crate::ast::Term::App(func, args) =
+            &$var as &$crate::ast::Term
+        {
+            match_term!($func = func).and_then(|func| {
+                Some((func, args.as_slice()))
+            })
+        } else {
+            None
+        }
+    }};
+    ((@ $func:tt $($args:tt)+) = $var:expr) => {{
+        if let $crate::ast::Term::App(func, args) =
+            &$var as &$crate::ast::Term
+        {
+            match_term!($func = func).and_then(|func| {
+                match_term!(@ARGS ($($args)+) = args.as_slice()).map(|args| {
+                    (func, args)
+                })
+            })
+        } else {
+            None
+        }
+    }};
     ($bind:ident = $var:expr) => { Some($var) };
     (((_ $indexed_op:tt $($op_args:tt)+) $($args:tt)+) = $var:expr) => {{
         if let $crate::ast::Term::ParamOp {
@@ -175,12 +208,21 @@ macro_rules! match_term {
     (@GET_VARIANT >=)       => { $crate::ast::Operator::GreaterEq };
 
     (@GET_VARIANT to_real)  => { $crate::ast::Operator::ToReal };
+    (@GET_VARIANT to_int)  => { $crate::ast::Operator::ToInt };
+    (@GET_VARIANT is_int)  => { $crate::ast::Operator::IsInt };
+
+    (@GET_VARIANT abs)  => { $crate::ast::Operator::Abs };
+    (@GET_VARIANT log2)  => { $crate::ast::Operator::Log2 };
+    (@GET_VARIANT pow2)  => { $crate::ast::Operator::Pow2 };
 
     (@GET_VARIANT cl)    => { $crate::ast::Operator::Cl };
     (@GET_VARIANT delete)    => { $crate::ast::Operator::Delete };
 
     (@GET_VARIANT pbbterm)  => { $crate::ast::Operator::BvPBbTerm };
     (@GET_VARIANT int_of)      => { $crate::ast::ParamOperator::BvIntOf };
+
+    (@GET_VARIANT select)    => { $crate::ast::Operator::Select };
+    (@GET_VARIANT store)    => { $crate::ast::Operator::Store };
 
     (@GET_VARIANT bbterm)      => { $crate::ast::Operator::BvBbTerm };
     (@GET_VARIANT bit_of)      => { $crate::ast::ParamOperator::BvBitOf };
@@ -293,6 +335,13 @@ macro_rules! build_term {
         let bindings = $crate::ast::BindingList(vec![($z.into(), sort)]);
         let body = build_term!($pool, $arg);
         $pool.add(Term::Binder(Binder::Choice, bindings, body))
+    }};
+    ($pool:expr, (lambda ($(($name:literal $sort:ident))+) $body:tt)) => {{
+        let bindings = $crate::ast::BindingList(vec![
+            $(($name.into(), $pool.add($crate::ast::Term::Sort($crate::ast::Sort::$sort)))),+
+        ]);
+        let body = build_term!($pool, $body);
+        $pool.add($crate::ast::Term::Binder($crate::ast::Binder::Lambda, bindings, body))
     }};
     ($pool:expr, $int:literal) => { $pool.add($crate::ast::Term::Const($crate::ast::Constant::Integer($int.into()))) };
     ($pool:expr, (const $name:ident)) => { $pool.add($crate::ast::Term::Const($crate::ast::Constant::Integer($name.clone()))) };

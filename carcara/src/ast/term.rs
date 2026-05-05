@@ -97,8 +97,8 @@ pub enum Sort {
     /// The associated 'Integer' is the order of the field.
     Ff(Integer),
 
-    /// The sort of RARE lists.
-    RareList,
+    /// The sort of RARE lists, parameterized by their element sort.
+    RareList(Rc<Term>),
 
     /// The sort of sorts.
     Type,
@@ -374,6 +374,8 @@ pub enum Operator {
     BvSGt,
     BvSGe,
 
+    BvIte,
+
     UBvToInt,
     SBvToInt,
 
@@ -508,6 +510,7 @@ impl Operator {
             | Operator::BvSLe
             | Operator::BvSGt
             | Operator::BvSGe
+            | Operator::BvIte
             | Operator::UBvToInt
             | Operator::SBvToInt
             | Operator::BvPBbTerm
@@ -653,6 +656,8 @@ impl_str_conversion_traits!(Operator {
     BvSGt: "bvsgt",
     BvSGe: "bvsge",
 
+    BvIte: "bvite",
+
     UBvToInt: "ubv_to_int",
     SBvToInt: "sbv_to_int",
 
@@ -784,8 +789,10 @@ impl Sort {
             | (Sort::Real, Sort::Real)
             | (Sort::String, Sort::String)
             | (Sort::RegLan, Sort::RegLan)
-            | (Sort::RareList, Sort::RareList)
             | (Sort::Type, Sort::Type) => true,
+            (Sort::RareList(a), Sort::RareList(b)) => {
+                a.as_sort().unwrap().match_with(b.as_sort().unwrap(), map)
+            }
             (Sort::Array(x_a, y_a), Sort::Array(x_b, y_b)) => {
                 let s_x_a = x_a.as_sort().unwrap();
                 let s_y_a = y_a.as_sort().unwrap();
@@ -1177,11 +1184,32 @@ impl Constant {
     }
 }
 
+impl Operator {
+    pub fn is_assoc(&self) -> bool {
+        match self {
+            Operator::And
+            | Operator::Or
+            | Operator::Add
+            | Operator::Mult
+            | Operator::BvAdd
+            | Operator::BvOr
+            | Operator::BvMul
+            | Operator::BvAnd
+            | Operator::BvXor
+            | Operator::BvConcat
+            | Operator::FfAdd
+            | Operator::FfMul => true,
+            _ => false,
+        }
+    }
+}
+
 impl Sort {
     pub fn is_polymorphic(&self) -> bool {
         match self {
             Sort::Var(_) => true,
             Sort::ParamSort(_, sort) if matches!(&**sort, Term::Sort(Sort::Var(_))) => true,
+            Sort::RareList(inner) => inner.as_sort().is_some_and(Sort::is_polymorphic),
             _ => false,
         }
     }
