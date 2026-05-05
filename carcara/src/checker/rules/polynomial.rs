@@ -276,16 +276,3 @@ pub fn poly_simp_rel(RuleArgs { conclusion, premises, pool, .. }: RuleArgs) -> R
         ((op1, _), (op2, _)) => Err(PolynomialError::InvalidOperators(op1, op2).into()),
     }
 }
-
-/// Checks whether two FF terms normalize to the same polynomial modulo `order`.
-fn ff_poly_norm_eq(t: &Rc<Term>, s: &Rc<Term>, order: &Integer) -> RuleResult {
-    let (t_norm, s_norm) = (
-        Polynomial::from_term(t).modulo(order).unwrap(),
-        Polynomial::from_term(s).modulo(order).unwrap(),
-    );
-    if !t_norm.sub(s_norm).is_zero() {
-        Err(PolynomialError::PolynomialsNotEqual(t.clone(), s.clone()).into())
-    } else {
-        Ok(())
-    }
-}
