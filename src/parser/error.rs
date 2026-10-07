@@ -36,6 +36,14 @@ pub enum ParserError {
     #[error("unexpected EOF in string literal")]
     EofInString,
 
+    /// The lexer encountered the end of the input while reading a real algebraic number.
+    #[error("unexpected EOF in real algebraic number")]
+    EofInRealAlgebraicNumber,
+
+    /// The parser encountered a malformed real algebraic number.
+    #[error("invalid real algebraic number: '{0}'")]
+    InvalidRealAlgebraicNumber(String),
+
     /// The lexer encountered an invalid Unicode value in an escape sequence.
     #[error("invalid Unicode value: 0x'{0}'")]
     InvalidUnicode(String),

@@ -62,6 +62,18 @@ pub enum Term {
 
 /// A variable and an associated sort.
 pub type SortedVar = (String, Rc<Sort>);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RealAlgebraicNumber {
+    pub poly: Vec<Rational>,
+    pub lower: Rational,
+    pub upper: Rational,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RealAlgebraicNumberWitness {
+    pub ran: RealAlgebraicNumber,
+    pub sturm: Vec<(Rc<Term>, Rc<Term>)>,
+}
 
 /// A constant term.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -85,6 +97,12 @@ pub enum Constant {
     ///
     /// The associated values are the bitvector's value and width respectively.
     BitVec(Integer, usize),
+
+    /// A Real Algebraic Number term.
+    RealAlgebraic(RealAlgebraicNumber),
+
+    /// A Real Algebraic Number witness term.
+    RealAlgebraicWitness(RealAlgebraicNumberWitness),
 }
 
 /// A binder, either a quantifier (`forall` or `exists`), `choice`, or `lambda`.
@@ -246,6 +264,19 @@ pub enum Operator {
 
     /// The `arccot` operator.
     Arccot,
+
+    // Univariate coverings
+    /// The `@sgn_inv` operator.
+    SgnInv,
+
+    /// The `@is_root` operator.
+    IsRoot,
+
+    /// The `@cov_minus_inf` operator.
+    CovMinusInf,
+
+    /// The `@cov_plus_inf` operator.
+    CovPlusInf,
 
     // Arrays
     /// The `select` operator.
@@ -662,6 +693,10 @@ impl Operator {
             | Operator::Arccsc
             | Operator::Arcsec
             | Operator::Arccot => None,
+            Operator::SgnInv
+            | Operator::IsRoot
+            | Operator::CovMinusInf
+            | Operator::CovPlusInf => None,
 
             // Arrays
             Operator::Select | Operator::Store => None,
@@ -864,6 +899,11 @@ impl_str_conversion_traits!(Operator {
     Arccsc: "arccsc",
     Arcsec: "arcsec",
     Arccot: "arccot",
+
+    SgnInv: "@sgn_inv",
+    IsRoot: "@is_root",
+    CovMinusInf: "@cov_minus_inf",
+    CovPlusInf: "@cov_plus_inf",
 
     Select: "select",
     Store: "store",
@@ -1415,6 +1455,8 @@ impl Constant {
             Constant::String(_) => Sort::String,
             Constant::RegLan(_, _) => Sort::RegLan,
             Constant::BitVec(_, width) => Sort::BitVec(*width),
+            Constant::RealAlgebraic(_) => Sort::Real,
+            Constant::RealAlgebraicWitness(_) => Sort::Real,
         }
     }
 

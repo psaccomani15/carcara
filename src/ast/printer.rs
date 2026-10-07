@@ -6,7 +6,7 @@ use crate::{
         ProblemPrelude, Proof, ProofCommand, Rc, Sort, SortedVar, Term,
     },
     parser::Token,
-    utils::{DedupIterator, is_symbol_character},
+    utils::{is_symbol_character, DedupIterator},
 };
 use carcara_macros::GenerateSetters;
 use std::{
@@ -616,6 +616,13 @@ impl fmt::Display for Constant {
             Constant::String(s) => write!(f, "\"{}\"", escape_string(s)),
             Constant::RegLan(s, _) => write!(f, "(re.from_automaton \"{}\")", s),
             Constant::BitVec(val, width) => write!(f, "(_ bv{} {})", val, width), // TODO: comeback to this
+            Constant::RealAlgebraic(val) => {
+                write!(f, "{:?}, ({}, {})", val.poly, val.lower, val.upper)
+            }
+            Constant::RealAlgebraicWitness(val) => {
+                let ran = &val.ran;
+                write!(f, "{:?}, ({}, {}), {:?}", ran.poly, ran.lower, ran.upper, val.sturm)
+            }
         }
     }
 }

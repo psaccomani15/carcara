@@ -182,6 +182,8 @@ impl Pool {
                 Constant::String(_) => Sort::String,
                 Constant::RegLan(_, _) => Sort::RegLan,
                 Constant::BitVec(_, w) => Sort::BitVec(*w),
+                Constant::RealAlgebraic(_) => Sort::Real,
+                Constant::RealAlgebraicWitness(_) => Sort::Real,
             }),
             Term::Var(_, sort) => sort.clone(),
             Term::Op(op, args) => match op {
@@ -214,6 +216,8 @@ impl Pool {
                 | Operator::BvSLe
                 | Operator::BvSGt
                 | Operator::BvSGe
+                | Operator::SgnInv
+                | Operator::IsRoot
                 | Operator::Cl
                 | Operator::Delete => self.sorts.add(Sort::Bool),
 
@@ -348,7 +352,9 @@ impl Pool {
                 | Operator::Arctan
                 | Operator::Arccsc
                 | Operator::Arcsec
-                | Operator::Arccot => self.sorts.add(Sort::Real),
+                | Operator::Arccot
+                | Operator::CovMinusInf
+                | Operator::CovPlusInf => self.sorts.add(Sort::Real),
 
                 // Sets and relations
                 Operator::SetUnion

@@ -3,6 +3,7 @@
 mod datatypes;
 mod error;
 mod lexer;
+mod ran;
 mod rare;
 pub(crate) mod tests;
 
@@ -10,8 +11,9 @@ use crate::{
     CarcaraResult, Error,
     ast::{
         AnchorArg, Binder, BindingList, Constant, Operator, ParamOperator, Problem, ProblemPrelude,
-        Proof, ProofCommand, ProofStep, QualifiedOperator, Rc, Sort, SortSubstitution, SortedVar,
-        Subproof, Substitution, Term, build_term,
+        Proof, ProofCommand, ProofStep, QualifiedOperator, Rc, RealAlgebraicNumber,
+        RealAlgebraicNumberWitness, Sort, SortSubstitution, SortedVar, Subproof, Substitution, Term,
+        build_term,
         pool::Pool,
         rare_rules::{RareStatements, Rules},
     },
@@ -742,6 +744,13 @@ impl<'p, 's> Parser<'p, 's> {
             | Operator::Arccot => {
                 assert_num_args(&args, 1)?;
                 self.check_sort_eq(&Sort::Real, &sorts[0])?;
+            }
+            Operator::CovMinusInf | Operator::CovPlusInf => assert_num_args(&args, 0)?,
+            Operator::SgnInv | Operator::IsRoot => {
+                assert_num_args(&args, if op == Operator::SgnInv { 3 } else { 2 })?;
+                for s in sorts {
+                    self.check_sort_one_of(&[Sort::Int, Sort::Real], &s)?;
+                }
             }
             Operator::SetUnion | Operator::SetInter | Operator::SetMinus | Operator::SetSubset => {
                 assert_num_args(&args, 2)?;
@@ -1767,6 +1776,38 @@ impl<'p, 's> Parser<'p, 's> {
         Ok(inner)
     }
 
+    /// Parses the rest of an indexed real algebraic number, e.g. `(_ real_algebraic_number
+    /// <1*x^2 + (-2), (11/8, 23/16)>)`. This method assumes that the current token is the symbol
+    /// that precedes the number in libpoly format, and consumes up to the closing `)`.
+    fn parse_raw_ran(&mut self) -> CarcaraResult<RealAlgebraicNumber> {
+        // The current token is still the symbol, since the number is read directly from the lexer
+        let pos = self.current_position;
+        let raw = self.lexer.read_raw_ran()?;
+        let ran = ran::parse_ran(&raw).map_err(|err| self.err(err, pos))?;
+        self.next_token()?;
+        self.expect_token(Token::CloseParen)?;
+        Ok(ran)
+    }
+
+    /// Builds a real algebraic number witness from the number and its flattened Sturm sequence
+    /// `q1 r1 ... qn rn`.
+    fn make_ran_witness(
+        ran: RealAlgebraicNumber,
+        args: Vec<Rc<Term>>,
+    ) -> Result<RealAlgebraicNumberWitness, ParserError> {
+        if args.is_empty() || args.len() % 2 != 0 {
+            return Err(ParserError::InvalidRealAlgebraicNumber(format!(
+                "expected a non-empty sequence of pairs, got {} terms",
+                args.len()
+            )));
+        }
+        let sturm = args
+            .chunks_exact(2)
+            .map(|pair| (pair[0].clone(), pair[1].clone()))
+            .collect();
+        Ok(RealAlgebraicNumberWitness { ran, sturm })
+    }
+
     fn parse_indexed_operator(&mut self) -> CarcaraResult<(ParamOperator, Vec<Rc<Term>>)> {
         let op_symbol = self.expect_symbol()?;
 
@@ -1955,6 +1996,10 @@ impl<'p, 's> Parser<'p, 's> {
                 self.next_token()?;
                 match reserved {
                     Reserved::Underscore => {
+                        if self.current_token == Token::Symbol("real_algebraic_number".to_owned()) {
+                            let ran = self.parse_raw_ran()?;
+                            return Ok(self.pool.add(Term::Const(Constant::RealAlgebraic(ran))));
+                        }
                         let (op, op_args) = self.parse_indexed_operator()?;
                         self.make_indexed_op(op, op_args, Vec::new())
                             .map_err(|err| self.err(err, head_pos))
@@ -2082,6 +2127,17 @@ impl<'p, 's> Parser<'p, 's> {
                 match self.current_token {
                     Token::ReservedWord(Reserved::Underscore) => {
                         self.next_token()?;
+                        if self.current_token
+                            == Token::Symbol("@real_algebraic_number_witness".to_owned())
+                        {
+                            let ran = self.parse_raw_ran()?;
+                            let args = self.parse_sequence(Self::parse_term, true)?;
+                            let witness = Self::make_ran_witness(ran, args)
+                                .map_err(|err| self.err(err, head_pos))?;
+                            return Ok(self
+                                .pool
+                                .add(Term::Const(Constant::RealAlgebraicWitness(witness))));
+                        }
                         let (op, op_args) = self.parse_indexed_operator()?;
                         let args = self.parse_sequence(Self::parse_term, true)?;
                         self.make_indexed_op(op, op_args, args)

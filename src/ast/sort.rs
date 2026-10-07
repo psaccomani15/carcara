@@ -105,7 +105,6 @@ pub enum Sort {
 
     /// A parametric sort, with a set of sort variables that can appear in the second argument.
     Par(Vec<String>, Rc<Sort>),
-
     /// The sort of sorts.
     Type,
 

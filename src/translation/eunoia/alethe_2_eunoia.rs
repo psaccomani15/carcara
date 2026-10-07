@@ -1,8 +1,8 @@
 //! Translator for `EunoiaProof`.
 use crate::ast::*;
 use crate::translation::{
-    Symbol, Translator, TranslatorData, VecToVecTranslator,
     eunoia::{alethe_signature::theory::*, ast::*},
+    Symbol, Translator, TranslatorData, VecToVecTranslator,
 };
 
 pub struct EunoiaTranslator {
@@ -634,10 +634,11 @@ impl VecToVecTranslator<'_> for EunoiaTranslator {
             Constant::Real(rational) => EunoiaTerm::Decimal(rational.clone()),
 
             Constant::String(string) => EunoiaTerm::String(string.clone()),
-
             // TODO
             Constant::BitVec(..) => panic!(),
             Constant::RegLan(_, _) => panic!(),
+            Constant::RealAlgebraic(_) => panic!(),
+            Constant::RealAlgebraicWitness(_) => panic!(),
         }
     }
 

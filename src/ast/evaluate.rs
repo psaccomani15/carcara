@@ -1,4 +1,6 @@
-use super::{Constant, Operator, ParamOperator, Rc, Sort, Term, pool::Pool};
+use crate::ast::term::RealAlgebraicNumber;
+
+use super::{pool::Pool, Constant, Operator, ParamOperator, Rc, Sort, Term};
 use rug::{Integer, Rational};
 use std::collections::{HashMap, HashSet};
 
@@ -15,6 +17,7 @@ pub enum Value {
 
     /// A real value.
     Real(Rational),
+    RealAlgebraic(RealAlgebraicNumber),
 
     /// A string value.
     String(String),
@@ -32,6 +35,8 @@ impl Value {
             Constant::String(s) => Some(Value::String(s)),
             Constant::RegLan(_, _) => None,
             Constant::BitVec(val, width) => Some(Value::BitVec(val, width)),
+            Constant::RealAlgebraic(val) => Some(Value::RealAlgebraic(val)),
+            Constant::RealAlgebraicWitness(_) => None,
         }
     }
 
@@ -112,6 +117,7 @@ impl Value {
             Value::Real(r) => Term::Const(Constant::Real(r)),
             Value::String(s) => Term::Const(Constant::String(s)),
             Value::BitVec(val, width) => Term::Const(Constant::BitVec(val, width)),
+            Value::RealAlgebraic(val) => Term::Const(Constant::RealAlgebraic(val)),
         }
     }
 }
@@ -361,6 +367,10 @@ fn eval_op(pool: &mut Pool, op: Operator, arg_terms: &[Rc<Term>]) -> Option<Valu
         | Operator::Arccsc
         | Operator::Arcsec
         | Operator::Arccot => return None,
+
+        Operator::SgnInv | Operator::IsRoot | Operator::CovMinusInf | Operator::CovPlusInf => {
+            return None;
+        }
 
         Operator::LessThan => comparison_op!(<, args),
         Operator::GreaterThan => comparison_op!(>, args),
