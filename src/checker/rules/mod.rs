@@ -27,6 +27,9 @@ pub struct RuleArgs<'a> {
     pub(super) discharge: &'a [&'a ProofCommand],
 
     pub(super) polyeq_time: &'a mut Duration,
+
+    // The real algebraic number witnesses validated so far, which the coverings rules reuse
+    pub(super) witnesses: &'a mut coverings::WitnessCache,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]

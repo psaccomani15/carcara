@@ -17,7 +17,7 @@ use crate::{
 use carcara_macros::GenerateSetters;
 use error::{CheckerError, SubproofError};
 use indexmap::{IndexMap, IndexSet};
-use rules::{Premise, RuleArgs, RuleResult, get_rule};
+use rules::{Premise, RuleArgs, RuleResult, coverings::WitnessCache, get_rule};
 use std::{
     collections::HashSet,
     fmt,
@@ -131,6 +131,7 @@ pub struct Checker<'c> {
     reached_empty_clause: bool,
     is_holey: bool,
     rare_rules: &'c Rules,
+    witnesses: WitnessCache,
 }
 
 impl<'c> Checker<'c> {
@@ -143,6 +144,7 @@ impl<'c> Checker<'c> {
             reached_empty_clause: false,
             is_holey: false,
             rare_rules,
+            witnesses: WitnessCache::default(),
         }
     }
 
@@ -397,6 +399,7 @@ impl<'c> Checker<'c> {
             discharge: &discharge,
             polyeq_time: &mut polyeq_time,
             rare_rules: self.rare_rules,
+            witnesses: &mut self.witnesses,
         };
         if let Some(custom_checker) = self.config.rule_checkers.get(&step.rule) {
             return check_external(rule_args.args, custom_checker);
