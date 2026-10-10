@@ -54,6 +54,10 @@ pub enum CheckerError {
     #[error(transparent)]
     Polynomial(#[from] PolynomialError),
 
+    /// An error in a univariate coverings rule.
+    #[error(transparent)]
+    Coverings(#[from] CoveringsError),
+
     /// An error when using an external tool.
     #[error(transparent)]
     External(#[from] ExternalError),
@@ -489,6 +493,115 @@ pub enum PolynomialError {
     /// The relation operators of the two terms are invalid.
     #[error("invalid relation operators: '{0}' and '{1}'")]
     InvalidOperators(Operator, Operator),
+}
+
+/// Errors relevant to the univariate coverings rules.
+#[derive(Debug, Error)]
+pub enum CoveringsError {
+    /// The rule is not implemented yet.
+    #[error("rule '{0}' is not implemented yet")]
+    NotImplemented(&'static str),
+
+    /// A term is not a valid interval endpoint, that is, a rational constant, a real algebraic
+    /// number witness, `@cov_minus_inf` or `@cov_plus_inf`.
+    #[error("not a valid interval endpoint: '{0}'")]
+    InvalidEndpoint(Rc<Term>),
+
+    /// The order of two endpoints can't be decided from their isolating intervals.
+    #[error("can't decide the order of endpoints '{0}' and '{1}'")]
+    IncomparableEndpoints(Rc<Term>, Rc<Term>),
+
+    /// A term is not a univariate polynomial over the expected variable.
+    #[error("term is not a univariate polynomial over '{1}': '{0}'")]
+    NotUnivariate(Rc<Term>, Rc<Term>),
+
+    /// A polynomial that must be nonzero is zero.
+    #[error("polynomial is zero: '{0}'")]
+    ZeroPolynomial(Rc<Term>),
+
+    /// A remainder sequence has fewer than two elements.
+    #[error("remainder sequence must have at least two elements, got {0}")]
+    RemainderSequenceTooShort(usize),
+
+    /// An element of a remainder sequence is not the expected polynomial.
+    #[error("element {0} of remainder sequence is not the expected polynomial")]
+    InvalidRemainderSequence(usize),
+
+    /// A remainder sequence stops before reaching a constant or a zero remainder.
+    #[error("remainder sequence is incomplete")]
+    IncompleteRemainderSequence,
+
+    /// The defining polynomial of a real algebraic number is zero at a bound of its isolating
+    /// interval.
+    #[error("defining polynomial of real algebraic number is zero at bound '{0}'")]
+    RootAtBound(Rational),
+
+    /// The isolating interval of a real algebraic number does not contain exactly one root of its
+    /// defining polynomial.
+    #[error("isolating interval of real algebraic number contains {0} roots, expected 1")]
+    WrongNumberOfRoots(i64),
+
+    /// A term was expected to be the variable of the univariate polynomials.
+    #[error("expected a variable, got '{0}'")]
+    ExpectedVariable(Rc<Term>),
+
+    /// A term is not a literal of the form `(~ p 0)` or `(not (~ p 0))`, with `~` a comparison.
+    #[error("term is not a comparison of a polynomial with zero: '{0}'")]
+    InvalidLiteral(Rc<Term>),
+
+    /// A literal is not false when its polynomial evaluates to the given value.
+    #[error("literal '{0}' is not false when its polynomial evaluates to {1}")]
+    LiteralNotFalseAt(Rc<Term>, Rational),
+
+    /// The sample of a `sgn_inv_elim` step is not strictly inside the interval.
+    #[error("sample '{0}' is not in the open interval ('{1}', '{2}')")]
+    SampleNotInInterval(Rc<Term>, Rc<Term>, Rc<Term>),
+
+    /// A `cover` step received an odd number of interval endpoints.
+    #[error("expected an even number of interval endpoints, got {0}")]
+    WrongNumberOfEndpoints(usize),
+
+    /// An interval of a `cover` step is a point at infinity or the whole line.
+    #[error("invalid interval: ('{0}', '{1}')")]
+    InvalidInterval(Rc<Term>, Rc<Term>),
+
+    /// An interval of a `cover` step starts after the part of the line covered so far.
+    #[error("interval starting at '{1}' leaves a gap after '{0}'")]
+    CoverGap(Rc<Term>, Rc<Term>),
+
+    /// The intervals of a `cover` step don't reach `+inf`.
+    #[error("intervals only cover the line up to '{0}'")]
+    CoverIncomplete(Rc<Term>),
+
+    /// A polynomial was expected to have exactly one variable.
+    #[error("expected a polynomial in exactly one variable, got '{0}'")]
+    ExpectedOneVariable(Rc<Term>),
+
+    /// A sequence of pairs of polynomials has an odd number of terms.
+    #[error("expected an even number of terms in a sequence of pairs, got {0}")]
+    OddSequenceLength(usize),
+
+    /// A rational or infinite endpoint came with a Sturm-Tarski sequence, which only algebraic
+    /// endpoints have.
+    #[error("unexpected Sturm-Tarski sequence for endpoint '{0}'")]
+    UnexpectedSequence(Rc<Term>),
+
+    /// A number is not a root of a polynomial.
+    #[error("'{1}' is not a root of '{0}'")]
+    NotRoot(Rc<Term>, Rc<Term>),
+
+    /// A window bound of a `sgn_inv_intro` step is not next to its endpoint: finite and below
+    /// (or above) the endpoint, or infinite if the endpoint is.
+    #[error("'{0}' is not a valid window bound for endpoint '{1}'")]
+    InvalidWindowBound(Rc<Term>, Rc<Term>),
+
+    /// A window bound is a root of the polynomial.
+    #[error("window bound '{0}' is a root of the polynomial")]
+    WindowBoundIsRoot(Rc<Term>),
+
+    /// The window of a `sgn_inv_intro` step contains more roots than the endpoints.
+    #[error("found {0} roots in the window, expected {1}")]
+    UnexpectedRoots(i64, i64),
 }
 
 /// Errors relevant to all rules that end subproofs (not just the `subproof` rule).

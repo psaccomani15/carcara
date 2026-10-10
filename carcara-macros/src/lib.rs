@@ -350,6 +350,12 @@ fn op_to_variant(op: &str) -> TokenStream2 {
         "select" => quote! { crate::ast::Operator::Select },
         "store" => quote! { crate::ast::Operator::Store },
 
+        // Univariate coverings
+        "sgn_inv" => quote! { crate::ast::Operator::SgnInv },
+        "is_root" => quote! { crate::ast::Operator::IsRoot },
+        "cov_minus_inf" => quote! { crate::ast::Operator::CovMinusInf },
+        "cov_plus_inf" => quote! { crate::ast::Operator::CovPlusInf },
+
         other => panic!("unknown operator in match_term!: {other:?}"),
     }
 }

@@ -1,11 +1,15 @@
 use super::ParserError;
-use crate::ast::RealAlgebraicNumber;
 use rug::Rational;
 
 /// Parses a libpoly monomial, into its coefficient and degree.
 fn parse_monom(s: &str) -> Result<(Rational, usize), ParserError> {
     let err = || ParserError::InvalidRealAlgebraicNumber(s.to_owned());
-    let (coeff, deg) = if let Some((coeff, pp)) = s.split_once('*') {
+    // Monomials with a negative coefficient are wrapped in parentheses, e.g. `(-3*x^2)`
+    let monom = s
+        .strip_prefix('(')
+        .and_then(|m| m.strip_suffix(')'))
+        .unwrap_or(s);
+    let (coeff, deg) = if let Some((coeff, pp)) = monom.split_once('*') {
         let deg = if let Some((_, rest)) = pp.split_once('^') {
             rest.parse::<usize>().map_err(|_| err())?
         } else {
@@ -13,20 +17,15 @@ fn parse_monom(s: &str) -> Result<(Rational, usize), ParserError> {
         };
         (coeff, deg)
     } else {
-        (s, 0)
+        (monom, 0)
     };
-    // Negative coefficients are wrapped in parentheses, e.g. `(-2)`
-    let coeff = coeff
-        .strip_prefix('(')
-        .and_then(|c| c.strip_suffix(')'))
-        .unwrap_or(coeff);
     Ok((coeff.parse::<Rational>().map_err(|_| err())?, deg))
 }
 
 /// Parses a real algebraic number in libpoly output format, without the enclosing `<` and `>`.
-/// The coefficients of the polynomial are stored from the
-/// lowest to the highest degree.
-pub fn parse_ran(s: &str) -> Result<RealAlgebraicNumber, ParserError> {
+/// Returns the coefficients of the defining polynomial, from the lowest to the highest degree,
+/// and the lower and upper bounds of the isolating interval.
+pub fn parse_ran(s: &str) -> Result<(Vec<Rational>, Rational, Rational), ParserError> {
     let err = || ParserError::InvalidRealAlgebraicNumber(s.to_owned());
     let (poly, interval) = s.split_once(", ").ok_or_else(err)?;
     // The interval is `(a, b)`, with `[`/`]` for closed ends, or `[a]` for a point
@@ -58,5 +57,5 @@ pub fn parse_ran(s: &str) -> Result<RealAlgebraicNumber, ParserError> {
         prev_deg = Some(deg);
     }
 
-    Ok(RealAlgebraicNumber { poly: coeffs, lower, upper })
+    Ok((coeffs, lower, upper))
 }

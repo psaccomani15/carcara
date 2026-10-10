@@ -64,7 +64,8 @@ pub enum Term {
 pub type SortedVar = (String, Rc<Sort>);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RealAlgebraicNumber {
-    pub poly: Vec<Rational>,
+    /// The defining polynomial, as a term over the variable of the witness's Sturm sequence.
+    pub poly: Rc<Term>,
     pub lower: Rational,
     pub upper: Rational,
 }

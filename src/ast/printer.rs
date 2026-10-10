@@ -3,7 +3,7 @@
 use crate::{
     ast::{
         AnchorArg, Binder, BindingList, Constant, MatchCase, MatchPattern, Operator,
-        ProblemPrelude, Proof, ProofCommand, Rc, Sort, SortedVar, Term,
+        ProblemPrelude, Proof, ProofCommand, Rc, RealAlgebraicNumber, Sort, SortedVar, Term,
     },
     parser::Token,
     utils::{is_symbol_character, DedupIterator},
@@ -221,6 +221,14 @@ fn count_proof_term_usage(proof: &Proof) -> HashMap<Rc<Term>, usize> {
 /// (and don't traverse its subterms again, since they'll only appear once, inside the shared term's
 /// definition).
 fn count_term_usage(term: &Rc<Term>, counts: &mut HashMap<Rc<Term>, usize>) {
+    // A witness is a constant, but the terms of its Sturm sequence are printed after it
+    if let Term::Const(Constant::RealAlgebraicWitness(w)) = term.as_ref() {
+        for (q, r) in &w.sturm {
+            count_term_usage(q, counts);
+            count_term_usage(r, counts);
+        }
+        return;
+    }
     if term.is_const() || term.is_var() {
         return;
     }
@@ -406,6 +414,13 @@ impl Print for Rc<Term> {
 impl Print for Term {
     fn print(&self, f: &mut fmt::Formatter, p: &mut Printer) -> fmt::Result {
         match self {
+            Term::Const(Constant::RealAlgebraicWitness(w)) => {
+                write!(f, "((_ @real_algebraic_number_witness ")?;
+                write_libpoly_ran(f, &w.ran)?;
+                write!(f, ")")?;
+                let sturm: Vec<_> = w.sturm.iter().flat_map(|(q, r)| [q, r]).collect();
+                p.s_expr_tail(f, &sturm)
+            }
             Term::Const(c) => {
                 if p.options.smt_lib_strict {
                     if let Constant::Integer(i) = c {
@@ -617,13 +632,59 @@ impl fmt::Display for Constant {
             Constant::RegLan(s, _) => write!(f, "(re.from_automaton \"{}\")", s),
             Constant::BitVec(val, width) => write!(f, "(_ bv{} {})", val, width), // TODO: comeback to this
             Constant::RealAlgebraic(val) => {
-                write!(f, "{:?}, ({}, {})", val.poly, val.lower, val.upper)
+                write!(f, "(_ real_algebraic_number ")?;
+                write_libpoly_ran(f, val)?;
+                write!(f, ")")
             }
             Constant::RealAlgebraicWitness(val) => {
-                let ran = &val.ran;
-                write!(f, "{:?}, ({}, {}), {:?}", ran.poly, ran.lower, ran.upper, val.sturm)
+                write!(f, "((_ @real_algebraic_number_witness ")?;
+                write_libpoly_ran(f, &val.ran)?;
+                write!(f, ")")?;
+                for (q, r) in &val.sturm {
+                    write!(f, " {:#} {:#}", q, r)?;
+                }
+                write!(f, ")")
             }
         }
+    }
+}
+
+/// Writes a real algebraic number in libpoly output format, e.g. `<1*x^2 + (-2), (11/8, 23/16)>`,
+/// the inverse of `parser::ran::parse_ran`. As in cvc5's output, the variable is always written
+/// as `x`. The defining polynomial must be in the form built by the parser: a sum of monomials
+/// `c` or `(* c x ... x)`, from the lowest to the highest degree.
+fn write_libpoly_ran(f: &mut fmt::Formatter, ran: &RealAlgebraicNumber) -> fmt::Result {
+    let monomials = match ran.poly.as_ref() {
+        Term::Op(Operator::Add, args) => args.as_slice(),
+        _ => std::slice::from_ref(&ran.poly),
+    };
+    write!(f, "<")?;
+    for (i, monomial) in monomials.iter().rev().enumerate() {
+        let (coeff, degree) = match monomial.as_ref() {
+            Term::Op(Operator::Mult, args) => (&args[0], args.len() - 1),
+            _ => (monomial, 0),
+        };
+        let coeff = coeff.as_fraction().ok_or(fmt::Error)?;
+        if i > 0 {
+            write!(f, " + ")?;
+        }
+        let negative = coeff.is_negative();
+        if negative {
+            write!(f, "(")?;
+        }
+        match degree {
+            0 => write!(f, "{}", coeff)?,
+            1 => write!(f, "{}*x", coeff)?,
+            _ => write!(f, "{}*x^{}", coeff, degree)?,
+        }
+        if negative {
+            write!(f, ")")?;
+        }
+    }
+    if ran.lower == ran.upper {
+        write!(f, ", [{}]>", ran.lower)
+    } else {
+        write!(f, ", ({}, {})>", ran.lower, ran.upper)
     }
 }
 
@@ -905,6 +966,33 @@ mod tests {
             "(and (! (= 1 2) :named x_0) x_0)",
             display("", "(and (= 1 2) (= 1 2))", options)
         );
+    }
+
+    #[test]
+    fn test_ran_witness_display() {
+        let definitions = "(declare-const y Real)";
+        let witness = "((_ @real_algebraic_number_witness <2*x^3 + (-1*x) + (-3), (5/4, 21/16)>) \
+            0.0 (+ -3.0 (* -1.0 y) (* 2.0 y y y)) 0.0 (+ -1.0 (* 6.0 y y)) \
+            0.0 (+ 9.0 (* 2.0 y)) 0.0 -473.0)";
+        let expected = "((_ @real_algebraic_number_witness <2*x^3 + (-1*x) + (-3), (5/4, 21/16)>) \
+            0.0 (+ -3/1 (* -1/1 y) (* 2.0 y y y)) 0.0 (+ -1/1 (* 6.0 y y)) 0.0 (+ 9.0 (* 2.0 y)) \
+            0.0 -473/1)";
+        let printed = display(definitions, witness, DisplayOptions::new());
+        assert_eq!(expected, printed);
+
+        // The printed witness can be parsed back
+        let mut pool = Pool::new();
+        let [original, reparsed] = parse_terms(&mut pool, definitions, [witness, &printed]);
+        assert_eq!(original, reparsed);
+
+        // The terms of the Sturm sequence take part in sharing
+        let shared = display(
+            definitions,
+            &format!("(and (= y {witness}) (= (* 6.0 y y) 1.0))"),
+            DisplayOptions::new().use_sharing(true),
+        );
+        assert!(shared.contains(":named @p_0)"), "{shared}");
+        assert!(shared.ends_with("(= @p_0 1.0))"), "{shared}");
     }
 
     #[test]

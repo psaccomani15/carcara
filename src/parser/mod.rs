@@ -1776,10 +1776,12 @@ impl<'p, 's> Parser<'p, 's> {
         Ok(inner)
     }
 
-    /// Parses the rest of an indexed real algebraic number, e.g. `(_ real_algebraic_number
-    /// <1*x^2 + (-2), (11/8, 23/16)>)`. This method assumes that the current token is the symbol
-    /// that precedes the number in libpoly format, and consumes up to the closing `)`.
-    fn parse_raw_ran(&mut self) -> CarcaraResult<RealAlgebraicNumber> {
+    /// Parses the rest of an indexed real algebraic number, e.g. `(_
+    /// @real_algebraic_number_witness <1*x^2 + (-2), (11/8, 23/16)>)`. This method assumes that
+    /// the current token is the symbol that precedes the number in libpoly format, and consumes up
+    /// to the closing `)`. Returns the coefficients of the defining polynomial, from the lowest to
+    /// the highest degree, and the bounds of the isolating interval.
+    fn parse_raw_ran(&mut self) -> CarcaraResult<(Vec<Rational>, Rational, Rational)> {
         // The current token is still the symbol, since the number is read directly from the lexer
         let pos = self.current_position;
         let raw = self.lexer.read_raw_ran()?;
@@ -1790,21 +1792,64 @@ impl<'p, 's> Parser<'p, 's> {
     }
 
     /// Builds a real algebraic number witness from the number and its flattened Sturm sequence
-    /// `q1 r1 ... qn rn`.
+    /// `q1 r1 ... qn rn`. All polynomials in the sequence must be over the same variable, which is
+    /// also used to build the defining polynomial of the number from its coefficients.
     fn make_ran_witness(
-        ran: RealAlgebraicNumber,
+        &mut self,
+        (coeffs, lower, upper): (Vec<Rational>, Rational, Rational),
         args: Vec<Rc<Term>>,
     ) -> Result<RealAlgebraicNumberWitness, ParserError> {
-        if args.is_empty() || args.len() % 2 != 0 {
-            return Err(ParserError::InvalidRealAlgebraicNumber(format!(
+        let err = |msg: String| ParserError::InvalidRealAlgebraicNumber(msg);
+        if args.is_empty() || !args.len().is_multiple_of(2) {
+            return Err(err(format!(
                 "expected a non-empty sequence of pairs, got {} terms",
                 args.len()
             )));
         }
+
+        let mut var: Option<Rc<Term>> = None;
+        for arg in &args {
+            for v in self.pool.free_vars(arg) {
+                match &var {
+                    Some(x) if x != v => {
+                        return Err(err(format!(
+                            "Sturm sequence has more than one variable: {x} and {v}"
+                        )));
+                    }
+                    Some(_) => (),
+                    None => var = Some(v.clone()),
+                }
+            }
+        }
+        let var = var.ok_or_else(|| err("Sturm sequence has no variable".to_owned()))?;
+
+        // Builds `c0 + c1 * x + c2 * x * x + ...`, skipping zero coefficients
+        let mut monomials = Vec::new();
+        for (deg, c) in coeffs.into_iter().enumerate() {
+            if c == 0 {
+                continue;
+            }
+            let c = self.pool.add(Term::new_real(c));
+            let monomial = if deg == 0 {
+                c
+            } else {
+                let mut factors = vec![c];
+                factors.extend(std::iter::repeat_n(var.clone(), deg));
+                self.pool.add(Term::Op(Operator::Mult, factors))
+            };
+            monomials.push(monomial);
+        }
+        let poly = match monomials.len() {
+            0 => self.pool.add(Term::new_real(0)),
+            1 => monomials.pop().unwrap(),
+            _ => self.pool.add(Term::Op(Operator::Add, monomials)),
+        };
+
         let sturm = args
             .chunks_exact(2)
             .map(|pair| (pair[0].clone(), pair[1].clone()))
             .collect();
+        let ran = RealAlgebraicNumber { poly, lower, upper };
         Ok(RealAlgebraicNumberWitness { ran, sturm })
     }
 
@@ -1996,10 +2041,6 @@ impl<'p, 's> Parser<'p, 's> {
                 self.next_token()?;
                 match reserved {
                     Reserved::Underscore => {
-                        if self.current_token == Token::Symbol("real_algebraic_number".to_owned()) {
-                            let ran = self.parse_raw_ran()?;
-                            return Ok(self.pool.add(Term::Const(Constant::RealAlgebraic(ran))));
-                        }
                         let (op, op_args) = self.parse_indexed_operator()?;
                         self.make_indexed_op(op, op_args, Vec::new())
                             .map_err(|err| self.err(err, head_pos))
@@ -2130,9 +2171,11 @@ impl<'p, 's> Parser<'p, 's> {
                         if self.current_token
                             == Token::Symbol("@real_algebraic_number_witness".to_owned())
                         {
+                            // TODO: Properly handle both real_algebraic_number and witness outputs. The infrastructure to do so is already implemented.
                             let ran = self.parse_raw_ran()?;
                             let args = self.parse_sequence(Self::parse_term, true)?;
-                            let witness = Self::make_ran_witness(ran, args)
+                            let witness = self
+                                .make_ran_witness(ran, args)
                                 .map_err(|err| self.err(err, head_pos))?;
                             return Ok(self
                                 .pool

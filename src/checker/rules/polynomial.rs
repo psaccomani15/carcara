@@ -21,7 +21,7 @@ impl Monomial {
 }
 
 #[derive(Debug, Clone)]
-struct Polynomial(pub(crate) IndexMap<Monomial, Rational>, pub(crate) Rational);
+pub(super) struct Polynomial(IndexMap<Monomial, Rational>, Rational);
 
 impl Polynomial {
     fn new() -> Self {
@@ -31,10 +31,27 @@ impl Polynomial {
     /// Builds a polynomial from a term. Takes a term with nested additions, subtractions and
     /// multiplications, and flattens it to polynomial, calculating the coefficient of each
     /// monomial.
-    fn from_term(term: &Rc<Term>) -> Self {
+    pub(super) fn from_term(term: &Rc<Term>) -> Self {
         let mut result = Self::new();
         result.add_term(term, &Rational::from(1));
         result
+    }
+
+    /// Converts the polynomial into a univariate polynomial over `var`. Returns `None` if some
+    /// monomial contains a factor other than `var`.
+    pub(super) fn to_univariate(&self, var: &Rc<Term>) -> Option<UPoly> {
+        let mut coeffs = vec![self.1.clone()];
+        for (monomial, coeff) in &self.0 {
+            if monomial.0.iter().any(|factor| factor != var) {
+                return None;
+            }
+            let degree = monomial.0.len();
+            if coeffs.len() <= degree {
+                coeffs.resize(degree + 1, Rational::new());
+            }
+            coeffs[degree] += coeff;
+        }
+        Some(upoly_normalize(coeffs))
     }
 
     /// Processes a term and adds it to the polynomial.
@@ -163,6 +180,98 @@ impl Polynomial {
             None
         }
     }
+}
+
+/// A univariate polynomial, given by its coefficients from the lowest to the highest degree and
+/// without trailing zeros. The zero polynomial is the empty vector.
+pub(super) type UPoly = Vec<Rational>;
+
+/// Removes the trailing zeros of the coefficients.
+fn upoly_normalize(mut p: UPoly) -> UPoly {
+    while p.last().is_some_and(Rational::is_zero) {
+        p.pop();
+    }
+    p
+}
+
+/// Evaluates the polynomial at `x`, using Horner's method.
+pub(super) fn upoly_eval(p: &[Rational], x: &Rational) -> Rational {
+    p.iter().rev().fold(Rational::new(), |acc, c| acc * x + c)
+}
+
+/// Returns the sign of the polynomial at `+inf` (or at `-inf`, if `positive` is `false`). The
+/// sign of the zero polynomial is zero.
+pub(super) fn upoly_sign_at_inf(p: &[Rational], positive: bool) -> i32 {
+    let Some(lc) = p.last() else {
+        return 0;
+    };
+    let sign = lc.cmp0() as i32;
+    if positive || (p.len() - 1).is_multiple_of(2) {
+        sign
+    } else {
+        -sign
+    }
+}
+
+/// Returns the leading coefficient of the polynomial, which is zero for the zero polynomial.
+pub(super) fn upoly_leading_coeff(p: &[Rational]) -> Rational {
+    p.last().cloned().unwrap_or_default()
+}
+
+pub(super) fn upoly_derivative(p: &[Rational]) -> UPoly {
+    p.iter()
+        .enumerate()
+        .skip(1)
+        .map(|(i, c)| c * Rational::from(i))
+        .collect()
+}
+
+pub(super) fn upoly_scale(c: &Rational, p: &[Rational]) -> UPoly {
+    upoly_normalize(p.iter().map(|x| Rational::from(c * x)).collect())
+}
+
+pub(super) fn upoly_add(a: &[Rational], b: &[Rational]) -> UPoly {
+    let mut result = vec![Rational::new(); a.len().max(b.len())];
+    for (i, c) in a.iter().enumerate() {
+        result[i] += c;
+    }
+    for (i, c) in b.iter().enumerate() {
+        result[i] += c;
+    }
+    upoly_normalize(result)
+}
+
+pub(super) fn upoly_sub(a: &[Rational], b: &[Rational]) -> UPoly {
+    upoly_add(a, &upoly_scale(&Rational::from(-1), b))
+}
+
+pub(super) fn upoly_mul(a: &[Rational], b: &[Rational]) -> UPoly {
+    if a.is_empty() || b.is_empty() {
+        return Vec::new();
+    }
+    let mut result = vec![Rational::new(); a.len() + b.len() - 1];
+    for (i, x) in a.iter().enumerate() {
+        for (j, y) in b.iter().enumerate() {
+            result[i + j] += Rational::from(x * y);
+        }
+    }
+    result
+}
+
+/// Returns `true` if the nonzero polynomial `b` divides `a`.
+pub(super) fn upoly_divides(b: &[Rational], a: &[Rational]) -> bool {
+    let lc = upoly_leading_coeff(b);
+    let mut rem = a.to_vec();
+    while rem.len() >= b.len() {
+        let factor = upoly_leading_coeff(&rem) / &lc;
+        let shift = rem.len() - b.len();
+        for (i, c) in b.iter().enumerate() {
+            rem[shift + i] -= Rational::from(&factor * c);
+        }
+        // The leading coefficient is now zero, so the degree always decreases
+        rem = upoly_normalize(rem);
+    }
+    rem.is_empty()
 }
 
 pub fn poly_simp(RuleArgs { conclusion, pool, .. }: RuleArgs) -> RuleResult {

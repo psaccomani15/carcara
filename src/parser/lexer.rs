@@ -230,7 +230,7 @@ impl<'s> Lexer<'s> {
     /// Returns the position of the current character.
     fn position(&self) -> Position {
         let raw = self.source_len - self.chars.as_str().len();
-        /// + 1 because lines and columns are usually counted starting from 1
+        // + 1 because lines and columns are usually counted starting from 1
         (self.lines_read + 1, raw - self.line_start + 1)
     }
 
@@ -312,10 +312,9 @@ impl<'s> Lexer<'s> {
     }
 
     /// Reads a RAN in libpoly output format, e.g. `<1*x^2 + (-2), (11/8, 23/16)>`, returning the
-    /// contents between `<` and `>` and the position of the `<`.
+    /// contents between `<` and `>`.
     pub fn read_raw_ran(&mut self) -> CarcaraResult<String> {
         self.consume_whitespace();
-        let start_position = self.position();
         match self.current() {
             Some('<') => self.next_char(),
             Some(c) => return Err(self.err(ParserError::UnexpectedChar(c))),

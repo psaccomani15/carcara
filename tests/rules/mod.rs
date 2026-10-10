@@ -88,6 +88,7 @@ pub(super) mod arrays;
 pub(super) mod bitvectors;
 pub(super) mod clausification;
 pub(super) mod congruence;
+pub(super) mod coverings;
 pub(super) mod cutting_planes;
 pub(super) mod drup;
 pub(super) mod extras;

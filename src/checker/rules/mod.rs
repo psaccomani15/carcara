@@ -193,6 +193,14 @@ pub fn get_rule(rule_name: &str, elaborated: bool, prefer_rup: bool) -> Option<R
         "la_tautology" => linear_arithmetic::la_tautology,
         "poly_simp" => polynomial::poly_simp,
         "poly_simp_rel" => polynomial::poly_simp_rel,
+
+        // univariate coverings rules.
+        "cover" => coverings::cover,
+        "sgn_inv_intro" => coverings::sgn_inv_intro,
+        "is_root_intro" => coverings::is_root_intro,
+        "sgn_inv_elim" => coverings::sgn_inv_elim,
+        "ran_eval" => coverings::ran_eval,
+
         "forall_inst" => quantifier::forall_inst,
         "qnt_join" => quantifier::qnt_join,
         "qnt_rm_unused" => quantifier::qnt_rm_unused,
@@ -384,6 +392,7 @@ pub(super) mod arrays;
 pub(super) mod bitvectors;
 pub(super) mod clausification;
 pub(super) mod congruence;
+pub(super) mod coverings;
 pub(super) mod cutting_planes;
 pub(super) mod drup;
 pub(super) mod extras;
